@@ -1,0 +1,13 @@
+{
+    "length": 20,
+    "delta x": 1,
+    "base width": 1.0,
+    "z bed": 0.0,
+    "angle": 90, 
+    "manning": 0.02,
+    "initial mode": "DAMBREAK",
+    "entropy fix": "True",
+    "CFL": 0.9,
+    "end time": 20,
+    "output freq": 1
+}
