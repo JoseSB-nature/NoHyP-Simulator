@@ -4,7 +4,12 @@ from loguru import logger
 from numba import njit
 import json
 import time
+import matplotlib.pyplot as plt
+import scienceplots
 
+plt.style.use('science')
+
+DEBUG = False
 class Canal:
     def __init__(self):
         
@@ -52,6 +57,7 @@ class Canal:
         
         out_freq = config['output freq']
         self.out_freq = out_freq
+        self.out_counter = self.out_freq
         
         self.dt_list = [] # List of time steps
         
@@ -93,6 +99,7 @@ class Canal:
                 left_u = dam_break['left u']
                 right_w = dam_break['right w']
                 left_w = dam_break['left w']
+                exact = dam_break['exact']
                 
                 self.position = position
                 self.left_height = left_height
@@ -101,18 +108,26 @@ class Canal:
                 self.left_u = left_u
                 self.right_w = right_w
                 self.left_w = left_w
+                self.exact = True if exact == 'True' else False
                 
                 # Initialize the canal with the dam break configuration
                 self.h = np.zeros(self.n)
+                self.hu = np.zeros(self.n)
                 self.u = np.zeros(self.n)
                 self.w = np.zeros(self.n)
                 
-                self.h[:position] = left_height
-                self.h[position:] = right_height
-                self.u[:position] = left_u
-                self.u[position:] = right_u
-                self.w[:position] = left_w
-                self.w[position:] = right_w
+                self.h[:int(position/self.dx)] = left_height
+                self.h[int(position/self.dx):] = right_height
+                self.u[:int(position/self.dx)] = left_u
+                self.u[int(position/self.dx):] = right_u
+                self.w[:int(position/self.dx)] = left_w
+                self.w[int(position/self.dx):] = right_w
+                self.hu = self.h*self.u
+                
+                if exact:
+                    with open('config/exact_dmb.txt','r') as f:
+                        self.exact_x, self.exact_h, _, self.exact_u = np.loadtxt(f,unpack=True)
+                        
                 
             case "SOLITON":
                 # TO BE IMPLEMENTED
@@ -121,6 +136,12 @@ class Canal:
             case "MCDONALD":
                 # TO BE IMPLEMENTED
                 pass
+        
+        ## initialize plots
+        plt.ion()
+        self.fig, self.ax = plt.subplots(3,1,figsize=(8,8))
+        self.plot_results() # plot initial conditions
+    
        
     # Calule te hydraulic radius of the trapezoidal canal in terms of B and angle
     def calc_hidraulic_radius(self):
@@ -183,7 +204,7 @@ class Canal:
         for i in range(self.n-1):
             Sf_wall = (self.S_f[i] + self.S_f[i+1])/2
             S0_wall = (self.z[i] - self.z[i+1])/self.dx
-            self.beta1[i] = -(self.gravity*self.h_wall[i]*(S0_wall-Sf_wall)*self.dx * self.width[i])/(2*self.c_wall[i]) # will fail with non constant width
+            self.beta1[i] = -(self.gravity*self.h_wall[i]*(S0_wall-Sf_wall)*self.dx)/(2*self.c_wall[i]) # will fail with non constant width
             self.beta2[i] = -self.beta1[i]
         self.beta1[-1] = self.beta1[-2]
         self.beta2[-1] = self.beta2[-2]
@@ -209,10 +230,9 @@ class Canal:
                 self.check_fix = True
                 break
         # print log
-        if self.check_fix: logger.warning(f"Entropy fix activated at time {self.real_time} in cell {i}")
+        if DEBUG: logger.warning(f"Entropy fix activated at time {self.real_time} in cell {i}")
         return self.check_fix
-
-    
+ 
     # Calculate all vectors if there is a change in the eigenvalues on the current time step    
     def entropy_fix(self):
         # Entropy fix following Morales-Hernandez, 2014
@@ -239,23 +259,82 @@ class Canal:
         self.lambda1_hat[-1] = self.lambda1_hat[-2]
         self.lambda2_hat[-1] = self.lambda2_hat[-2]
     
+    # Friction fix
+    def friction_fix(self):
+        beta_z = -0.5*self.gravity*self.h_wall*(np.roll(self.z,1)-self.z)
  
     def calc_dt(self):
         aux = np.concatenate((self.lambda1,self.lambda2))
         self.dt = self.CFL*self.dx/np.max(np.abs(aux)) # Courant-Friedrichs-Lewy condition, limit the time step to the CFL condition
         # output and end limits
-        if self.real_time + self.dt > self.out_freq:
-            self.dt = self.out_freq - self.real_time
-            self.out_freq += self.out_freq
+        if self.real_time + self.dt > self.out_counter:
+            self.dt = self.out_counter - self.real_time
+            self.out_counter += self.out_freq
             self.prog_bar.next()
         if self.real_time + self.dt > self.end_time:
             self.dt = self.end_time - self.real_time
         self.dt_list.append(self.dt)
         
     # update the hydrodynamic variables for the hydrostatic part    
-    def update_hydro(self):
+    def update_hydro_contrib(self):
         
-        for i in range(self.n):
+        for i in range(1,self.n):
+            h_contrib = 0
+            hu_contrib = 0
+            if self.check_fix: # we use all the variables calculated in the entropy fix
+                if self.lambda1_bar[i] > 0:
+                    h_contrib += self.lambda1_bar[i-1]*self.gamma1[i-1]
+                    hu_contrib += self.lambda1_bar[i-1]**2*self.gamma1[i-1]
+                if self.lambda1_bar[i] < 0:
+                    h_contrib += self.lambda1_bar[i]*self.gamma1[i]
+                    hu_contrib += self.lambda1_bar[i]**2*self.gamma1[i]
+                if self.lambda2_bar[i] > 0:
+                    h_contrib += self.lambda2_bar[i-1]*self.gamma2[i-1]
+                    hu_contrib += self.lambda2_bar[i-1]**2*self.gamma2[i-1]
+                if self.lambda2_bar[i] < 0:
+                    h_contrib += self.lambda2_bar[i]*self.gamma2[i]
+                    hu_contrib += self.lambda2_bar[i]**2*self.gamma2[i]
+                if self.lambda1_hat[i] > 0:
+                    h_contrib += self.lambda1_hat[i-1]*self.alpha1[i-1] # betta hat are set to zero
+                    hu_contrib += self.lambda1_hat[i-1]**2*self.alpha1[i-1]
+                if self.lambda1_hat[i] < 0:
+                    h_contrib += self.lambda1_hat[i]*self.alpha1[i]
+                    hu_contrib += self.lambda1_hat[i]**2*self.alpha1[i]
+                if self.lambda2_hat[i] > 0:
+                    h_contrib += self.lambda2_hat[i-1]*self.alpha2[i-1]
+                    hu_contrib += self.lambda2_hat[i-1]**2*self.alpha2[i-1]
+                if self.lambda2_hat[i] < 0:
+                    h_contrib += self.lambda2_hat[i]*self.alpha2[i]
+                    hu_contrib += self.lambda2_hat[i]**2*self.alpha2[i]                    
+            else:
+                if self.lambda1[i-1] > 0:
+                    h_contrib += self.lambda1[i-1]*self.gamma1[i-1] #update first component of the conservative vector
+                    hu_contrib += self.lambda1[i-1]**2*self.gamma1[i-1] #update second component of the conservative vector
+                if self.lambda1[i] < 0:
+                    h_contrib += self.lambda1[i]*self.gamma1[i]
+                    hu_contrib += self.lambda1[i]**2*self.gamma1[i]
+                if self.lambda2[i-1] > 0:
+                    h_contrib += self.lambda2[i-1]*self.gamma2[i-1]
+                    hu_contrib += self.lambda2[i-1]**2*self.gamma2[i-1]
+                if self.lambda2[i] < 0:
+                    h_contrib += self.lambda2[i]*self.gamma2[i]
+                    hu_contrib += self.lambda2[i]**2*self.gamma2[i]
+                           
+            self.h[i] = self.h[i] - self.dt/self.dx*(h_contrib)
+            self.hu[i] = self.hu[i] - self.dt/self.dx*(hu_contrib)
+        # contorn conditions
+        self.h[0] = self.left_height
+        self.h[-1] = self.right_height
+        self.hu[0] = self.left_u*self.left_height
+        self.hu[-1] = self.right_u*self.right_height
+               
+    def update_hydro_flux(self):
+        
+        # vector to store the fluxes
+        h_flux = np.zeros(self.n)
+        u_flux = np.zeros(self.n)
+        
+        for i in range(1,self.n):
             h_flux = 0
             u_flux = 0
             if self.check_fix: # we use all the variables calculated in the entropy fix
@@ -284,26 +363,30 @@ class Canal:
                     h_flux += self.lambda2_hat[i]*self.alpha2[i]
                     u_flux += self.lambda2_hat[i]**2*self.alpha2[i]                    
             else:
-                if self.lambda1[i] > 0:
+                if self.lambda1[i-1] > 0:
                     h_flux += self.lambda1[i-1]*self.gamma1[i-1] #update first component of the conservative vector
                     u_flux += self.lambda1[i-1]**2*self.gamma1[i-1] #update second component of the conservative vector
                 if self.lambda1[i] < 0:
                     h_flux += self.lambda1[i]*self.gamma1[i]
                     u_flux += self.lambda1[i]**2*self.gamma1[i]
-                if self.lambda2[i] > 0:
+                if self.lambda2[i-1] > 0:
                     h_flux += self.lambda2[i-1]*self.gamma2[i-1]
                     u_flux += self.lambda2[i-1]**2*self.gamma2[i-1]
                 if self.lambda2[i] < 0:
                     h_flux += self.lambda2[i]*self.gamma2[i]
                     u_flux += self.lambda2[i]**2*self.gamma2[i]
-                
-            
+                           
             self.h[i] = self.h[i] - self.dt/self.dx*(h_flux)
             self.u[i] = self.u[i] - self.dt/self.dx*(u_flux)
-                     
+        # contorn conditions
+        self.h[0] = self.left_height
+        self.h[-1] = self.right_height
+        self.u[0] = self.left_u
+        self.u[-1] = self.right_u
                
+    
     # Calculate variable vectors
-    def calc_vectors(self):
+    def debug_calc_vectors(self):
         t0 = time.time()
         self.calc_hidraulic_radius()
         t1 = time.time()
@@ -331,34 +414,71 @@ class Canal:
             # if a: logger.info(f"Entropy fix activated")
             self.entropy_fix()
             t7 = time.time()
-            self.check_entropy()
-            self.entropy_fix()
-            t8 = time.time()
-            
-                
-        # add time usage in % of total time
-        total_time = t8-t0
-        if self.check_fix: logger.debug(f"Total time: {total_time:.2f}\n\
-            R:{(t1-t0)/total_time:.2f}; ({t1-t0})\n\
-            S:{(t2-t1)/total_time:.2f}; ({t2-t1})\n\
-            walls:{(t4-t2)/total_time:.2f}; ({t4-t2})\n\
-            lambda:{(t5-t4)/total_time:.2f}; ({t5-t4})\n\
-            eigenvectors:{(t6-t5)/total_time:.2f}; ({t6-t5})\n\
-            entropy fix:{(t7-t6)/total_time:.2f}; ({t7-t6})\n\
-            entropy fix:{(t8-t7)/total_time:.2f}; ({t8-t7})") 
+
+  # Calculate variable vectors
+    def calc_vectors(self):
+        
+        self.u = self.hu/self.h
+        self.calc_hidraulic_radius()
+      
+        self.calc_S_manning()
+        
+        self.calc_h_wall()
+        self.calc_c_wall()
+        self.calc_u_wall()
+        
+        self.calc_lambdas()
+        self.calc_cell_lambda()
+        self.clac_alphas()
+        self.calc_betas()
+        self.calc_gammas()
+        
+        self.calc_eigenvectors()
+        
+        if self.activate_entropy_fix:
+            a = self.check_entropy()
+            if a:
+                self.entropy_fix()
+
 
     ##### Temporal loop #####
     def temporal_loop(self):
         while self.real_time < self.end_time:
             self.calc_vectors()
             self.calc_dt()
-            self.update_hydro()
+            self.update_hydro_contrib()
             self.real_time += self.dt
+            if abs(self.real_time - self.out_counter + self.out_freq) < 1e-6:
+                self.plot_results()
+                time.sleep(0.01)
             self.t_int += 1
             if self.t_int % 100 == 0:
                 if self.check_fix: logger.info(f"Time: {self.real_time:.2f} s")
 
 
+    # Plot the results
+    def plot_results(self):
+        for ax in self.ax:
+            ax.clear()
+            ax.grid()   
+        x = np.linspace(0,self.length,self.n)
+        self.ax[0].plot(x,self.h,label='h')
+        self.ax[0].set_ylim(min(self.left_height,self.right_height)-0.1,max(self.left_height,self.right_height)+0.1)
+        self.ax[1].plot(x,self.u,label='u')
+        Fr = self.u/np.sqrt(self.gravity*self.h)
+        self.ax[2].plot(x,Fr,label='w')
+        
+        # Exact solution if available
+        if self.exact:
+            self.ax[0].plot(self.exact_x,self.exact_h,'.',ms=1,color='black',label='h exact')
+            self.ax[1].plot(self.exact_x,self.exact_u,'.',ms=1,color='black',label='u exact')
+        
+        self.fig.suptitle(f"Time: {self.real_time:.2f} s")
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+        self.fig.savefig(f"img/state_{self.t_int}.png")
+
+        
 
 
 
