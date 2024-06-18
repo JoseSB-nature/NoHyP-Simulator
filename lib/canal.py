@@ -271,41 +271,40 @@ class Canal:
         self.dt_list.append(self.dt)
         
     # update the hydrodynamic variables for the hydrostatic part    
-    def update_hydro_contrib(self):
+    def _update_hydro_contrib(self):
         
         hu_flux = self.hu + self.lambda1_minus*self.gamma1*self.lambda1 + self.lambda2_minus*self.gamma2*self.lambda2
         huw_flux = np.where(hu_flux>0, hu_flux*self.w, hu_flux*np.roll(self.w,-1))
+        w_copy = self.w.copy()
         
-        
-        for i in range(1,self.n):
+        for i in range(1,self.n-1):
             h_contrib = 0
             hu_contrib = 0
-            hw_contrib = 0
             if self.check_fix: # we use all the variables calculated in the entropy fix
-                if self.lambda1_bar[i] > 0:
+                if self.lambda1_bar[i-1] > 0:
                     h_contrib += self.lambda1_bar[i-1]*self.gamma1[i-1]
                     hu_contrib += self.lambda1_bar[i-1]**2*self.gamma1[i-1]
                 if self.lambda1_bar[i] < 0:
                     h_contrib += self.lambda1_bar[i]*self.gamma1[i]
                     hu_contrib += self.lambda1_bar[i]**2*self.gamma1[i]
-                if self.lambda2_bar[i] > 0:
+                if self.lambda2_bar[i-1] > 0:
                     h_contrib += self.lambda2_bar[i-1]*self.gamma2[i-1]
                     hu_contrib += self.lambda2_bar[i-1]**2*self.gamma2[i-1]
                 if self.lambda2_bar[i] < 0:
                     h_contrib += self.lambda2_bar[i]*self.gamma2[i]
                     hu_contrib += self.lambda2_bar[i]**2*self.gamma2[i]
-                # if self.lambda1_hat[i] > 0:
-                #     h_contrib += self.lambda1_hat[i-1]*self.alpha1[i-1] # betta hat are set to zero
-                #     hu_contrib += self.lambda1_hat[i-1]**2*self.alpha1[i-1]
-                # if self.lambda1_hat[i] < 0:
-                #     h_contrib += self.lambda1_hat[i]*self.alpha1[i]
-                #     hu_contrib += self.lambda1_hat[i]**2*self.alpha1[i]
-                # if self.lambda2_hat[i] > 0:
-                #     h_contrib += self.lambda2_hat[i-1]*self.alpha2[i-1]
-                #     hu_contrib += self.lambda2_hat[i-1]**2*self.alpha2[i-1]
-                # if self.lambda2_hat[i] < 0:
-                #     h_contrib += self.lambda2_hat[i]*self.alpha2[i]
-                #     hu_contrib += self.lambda2_hat[i]**2*self.alpha2[i]                    
+                if self.lambda1_hat[i-1] > 0:
+                    h_contrib += self.lambda1_hat[i-1]*self.alpha1[i-1] # betta hat are set to zero
+                    hu_contrib += self.lambda1_hat[i-1]**2*self.alpha1[i-1]
+                if self.lambda1_hat[i] < 0:
+                    h_contrib += self.lambda1_hat[i]*self.alpha1[i]
+                    hu_contrib += self.lambda1_hat[i]**2*self.alpha1[i]
+                if self.lambda2_hat[i-1] > 0:
+                    h_contrib += self.lambda2_hat[i-1]*self.alpha2[i-1]
+                    hu_contrib += self.lambda2_hat[i-1]**2*self.alpha2[i-1]
+                if self.lambda2_hat[i] < 0:
+                    h_contrib += self.lambda2_hat[i]*self.alpha2[i]
+                    hu_contrib += self.lambda2_hat[i]**2*self.alpha2[i]                    
             else:
                 if self.lambda1[i-1] > 0:
                     h_contrib += self.lambda1[i-1]*self.gamma1[i-1] #update first component of the conservative vector
@@ -323,55 +322,61 @@ class Canal:
             self.h[i] = self.h[i] - self.dt/self.dx*(h_contrib)
             self.hu[i] = self.hu[i] - self.dt/self.dx*(hu_contrib)
         
-        # update hw
-        self.hw -= self.dt/self.dx*(np.roll(huw_flux,1) - huw_flux)
+            # update hw
+            uplusL = 0.5*(self.u[i-1]+abs(self.u[i-1]))
+            uminusR = 0.5*(self.u[i]+abs(self.u[i]))
+            self.w[i] = w_copy[i] - self.dt/self.dx*((uplusL*(w_copy[i]-w_copy[i-1]) + uminusR*(w_copy[i+1]-w_copy[i])))
+        
+        # contorn conditions
+        # self.h[0] = self.left_height
+        # self.h[-1] = self.right_height
+        # self.hu[0] = self.left_u*self.left_height
+        # self.hu[-1] = self.right_u*self.right_height
+        self.h[0]   = self.h[1]
+        self.h[-1]  = self.h[-2]
+        self.hu[0]  = self.hu[1]
+        self.hu[-1] = self.hu[-2]
+        self.w[0] = w_copy[i] - self.dt/self.dx*(uminusR*(w_copy[1]-w_copy[0]))
+        self.w[-1] = w_copy[i] - self.dt/self.dx*(uplusL*(w_copy[-1]-w_copy[-2]))
+    
+    def update_hydro_waves(self):
+        # # # vector to store the fluxes           
+        hu_wave_minus = self.lambda1_minus*self.gamma1*self.lambda1 + self.lambda2_minus*self.gamma2*self.lambda2
+        h_wave_minus  = self.lambda1_minus*self.gamma1 + self.lambda2_minus*self.gamma2
+        hu_wave_plus  = self.lambda1_plus*self.gamma1*self.lambda1 + self.lambda2_plus*self.gamma2*self.lambda2 
+        h_wave_plus   = self.lambda1_plus*self.gamma1 + self.lambda2_plus*self.gamma2
+
+
+        self.h -= self.dt/self.dx*(h_wave_minus+np.roll(h_wave_plus,1))
+        self.hu -= self.dt/self.dx*(hu_wave_minus+np.roll(hu_wave_plus,1))  
         
         # contorn conditions
         self.h[0] = self.left_height
         self.h[-1] = self.right_height
         self.hu[0] = self.left_u*self.left_height
         self.hu[-1] = self.right_u*self.right_height
-               
+        
     def update_hydro_flux(self):
-        
-        # # vector to store the fluxes
-        # h_flux = self.h.copy()
-        # hu_flux = self.hu.copy()
-        
-        # h_flux += self.lambda1_minus*self.gamma1*self.lambda1
-        # h_flux += self.lambda2_minus*self.gamma2*self.lambda2
-        
-        # hu_flux += self.lambda1_minus*self.gamma1*self.lambda1**2
-        # hu_flux += self.lambda2_minus*self.gamma2*self.lambda2**2
-        
-        h_flux_up = np.roll(self.hu,-1)
-        h_flux_dw = self.hu
-        hu_flux_up = np.roll(self.hu**2/self.h+0.5*self.gravity*self.h**2,-1)
-        hu_flux_dw = self.hu**2/self.h+0.5*self.gravity*self.h**2
-        
-        for i in range(1,self.n):
-            if self.lambda1[i] < 0:
-                h_flux_dw[i] += self.lambda1[i]*self.gamma1[i]
-                hu_flux_dw[i] += self.lambda1[i]**2*self.gamma1[i]
-            else:
-                h_flux_up[i] -= self.lambda1[i]*self.gamma1[i]
-                hu_flux_up[i] -= self.lambda1[i]**2*self.gamma1[i]
-            if self.lambda2[i] < 0:
-                h_flux_dw[i] += self.lambda2[i]*self.gamma2[i]
-                hu_flux_dw[i] += self.lambda2[i]**2*self.gamma2[i]
-            else:
-                h_flux_up[i] -= self.lambda2[i]*self.gamma2[i]
-                hu_flux_up[i] -= self.lambda2[i]**2*self.gamma2[i]
+        # # # vector to store the fluxes           
+        hu_flux_minus = self.lambda1_minus*self.gamma1*self.lambda1 + self.lambda2_minus*self.gamma2*self.lambda2
+        h_flux_minus  = self.lambda1_minus*self.gamma1 + self.lambda2_minus*self.gamma2
+        hu_flux_plus  = -self.lambda1_plus*self.gamma1*self.lambda1 - self.lambda2_plus*self.gamma2*self.lambda2 
+        h_flux_plus   = -self.lambda1_plus*self.gamma1 - self.lambda2_plus*self.gamma2
 
-        self.h -= self.dt/self.dx*(h_flux_dw-np.roll(h_flux_up,1))
-        self.hu -= self.dt/self.dx*(hu_flux_dw-np.roll(hu_flux_up,1))                
-        # self.h -= self.dt/self.dx*(np.roll(h_flux,1)-h_flux)
-        # self.hu -= self.dt/self.dx*(np.roll(hu_flux,1)-hu_flux)
+        # update fluxes with physical fluxes
+        hu_flux_minus += self.hu*self.h+0.5*self.gravity*self.h**2
+        h_flux_minus += self.hu
+        hu_flux_plus += np.roll(self.hu,-1)*np.roll(self.h,-1)+0.5*self.gravity*np.roll(self.h,-1)**2
+        h_flux_plus += np.roll(self.hu,-1)
+
+        self.h -= self.dt/self.dx*(h_flux_minus-np.roll(h_flux_plus,1))
+        self.hu -= self.dt/self.dx*(hu_flux_minus-np.roll(hu_flux_plus,1))  
+        
         # contorn conditions
         self.h[0] = self.left_height
         self.h[-1] = self.right_height
-        self.hu[0] = self.left_u
-        self.hu[-1] = self.right_u
+        self.hu[0] = self.left_u*self.left_height
+        self.hu[-1] = self.right_u*self.right_height
                
     # Calculate variable vectors
     def debug_calc_vectors(self):
@@ -418,7 +423,7 @@ class Canal:
     def calc_vectors(self):
         
         self.u = self.hu/self.h
-        self.w = self.hw/self.h
+        self.hw = self.w*self.h
         self.calc_hidraulic_radius()
       
         self.calc_S_manning()
@@ -436,6 +441,8 @@ class Canal:
         
         self.lambda1_minus = np.where(self.lambda1 < 0, self.lambda1, 0)
         self.lambda2_minus = np.where(self.lambda2 < 0, self.lambda2, 0)
+        self.lambda1_plus = np.where(self.lambda1 > 0, self.lambda1, 0)
+        self.lambda2_plus = np.where(self.lambda2 > 0, self.lambda2, 0)
         
         if self.activate_entropy_fix:
             a = self.check_entropy()
@@ -452,8 +459,8 @@ class Canal:
             match mode:
                 case 'flux':
                     self.update_hydro_flux()
-                case 'cont':
-                    self.update_hydro_contrib()
+                case 'wave':
+                    self.update_hydro_waves()
             self.real_time += self.dt
             if abs(self.real_time - self.out_counter + self.out_freq) < 1e-6:
                 self.plot_results()
@@ -469,11 +476,13 @@ class Canal:
             ax.clear()
             ax.grid()   
         x = np.linspace(0,self.length,self.n)
-        self.ax[0].plot(x,self.h,label='h')
-        self.ax[0].set_ylim(min(self.left_height,self.right_height)-0.1,max(self.left_height,self.right_height)+0.1)
+        self.ax[0].plot(x,self.h+self.z,label='h')
+        # self.ax[0].set_ylim(min(self.left_height,self.right_height)-0.1,max(self.left_height,self.right_height)+0.1)
         self.ax[1].plot(x,self.u,label='u')
         Fr = self.u/np.sqrt(self.gravity*self.h)
         self.ax[2].plot(x,self.w,label='w')
+        # plot z bed solid
+        self.ax[0].fill_between(x,0,self.z,color='black',alpha=0.5)
         
         # Exact solution if available
         if self.exact:
