@@ -1,10 +1,10 @@
 {
     "position": 10,
-    "left height": 0.6,
-    "right height": 0.2,
+    "left height": 2,
+    "right height": 1,
     "left u": 0,
     "right u": 0,
-    "left w": 0.2,
-    "right w": 0.1,
+    "left w": 0.1,
+    "right w": 0.0,
     "exact": "False"
 }

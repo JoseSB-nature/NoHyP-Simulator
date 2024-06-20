@@ -8,12 +8,17 @@ import matplotlib.pyplot as plt
 import scienceplots
 
 plt.style.use('science')
+# ignore where warnings
+# np.seterr(divide='ignore', invalid='ignore')
+
+TOL_wet_cells = 1e-12
 
 DEBUG = False
 class Canal:
     def __init__(self):
         
         self.gravity = 9.81 # Gravity acceleration in m/s^2
+        self.rho = 1 # Water density in kg/m^3
         
         self.real_time = 0.0 # Real time of the simulation
         self.t_int = 0 # Time step counter
@@ -44,6 +49,7 @@ class Canal:
         
         mode = config['initial mode'] # Can be 'DAMBREAK' or 'SOLITON'
         self.mode = mode
+        self.scheme = 'flux'
         
         entropy_fix = config['entropy fix']
         self.activate_entropy_fix = True if entropy_fix == 'True' else False
@@ -124,6 +130,7 @@ class Canal:
                 self.w[int(position/self.dx):] = right_w
                 self.hu = self.h*self.u
                 self.hw = self.h*self.w
+                self.p = self.rho*self.gravity*self.h # initial pressure set to hydrostatic
                 
                 if exact:
                     with open('config/exact_dmb.txt','r') as f:
@@ -140,37 +147,43 @@ class Canal:
         
         ## initialize plots
         plt.ion()
-        self.fig, self.ax = plt.subplots(3,1,figsize=(8,8))
+        self.fig, self.ax = plt.subplots(2,2,figsize=(10,8))
         self.plot_results() # plot initial conditions
     
        
     # Calule te hydraulic radius of the trapezoidal canal in terms of B and angle
     def calc_hidraulic_radius(self):
-        self.R = self.h*(self.width +self.h/np.tan(self.angle))/(self.width + 2*self.h/np.sin(self.angle))
+        # self.R = self.h*(self.width +self.h/np.tan(self.angle))/(self.width + 2*self.h/np.sin(self.angle))
+        # R = np.where(self.h>TOL_wet_cells,(2*self.h+self.width)/(self.h*self.width),0)
+        self.R = np.divide(2*self.h+self.width, self.h*self.width, where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
         
     # Calculate the friction slope of the canal
     def calc_S_manning(self):
-        self.S_f = (self.u*self.manning)**2/(self.R**(4/3))
+        # S_f = np.where(self.h>TOL_wet_cells,(self.u*self.manning)**2/(self.R**(4/3)),0)
+        self.S_f = np.divide((self.u*self.manning)**2, self.R**(4/3), where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
       
 ############################ VARIABLES CALCULATION FOR ROE SCHEME ############################  
     def calc_h_wall(self):
         self.h_wall = np.zeros(self.n)
         for i in range(self.n-1):
             self.h_wall[i] = (self.h[i] + self.h[i+1])/2
-        self.h_wall[-1] = self.h_wall[-2] # Last value is the same as the previous one    
+        self.h_wall[-1] = self.h[-1] # Last value is the same as the previous one    
         
     # c average velocity of the canal
     def calc_c_wall(self):
         self.c_wall = np.zeros(self.n)
         for i in range(self.n-1):
             self.c_wall[i] = np.sqrt(self.gravity*self.h_wall[i]) # This formulation could need adjustments for width
-        self.c_wall[-1] = self.c_wall[-2] # Last value is the same as the previous one
+        self.c_wall[-1] = self.c[-1] # Last value is the same as the previous one
             
     def calc_u_wall(self):
         self.u_wall = np.zeros(self.n)
         for i in range(self.n-1):
-            self.u_wall[i] = (self.u[i]*np.sqrt(self.h[i]) + self.u[i+1]*np.sqrt(self.h[i+1]))/(np.sqrt(self.h[i]) + np.sqrt(self.h[i+1]))
-        self.u_wall[-1] = self.u_wall[-2] # Last value is the same as the previous one
+            if self.wet_dry[i] == 1:
+                self.u_wall[i] = (self.u[i]*np.sqrt(self.h[i]) + self.u[i+1]*np.sqrt(self.h[i+1]))/(np.sqrt(self.h[i]) + np.sqrt(self.h[i+1]))
+            else:
+                self.u_wall[i] = 0
+        self.u_wall[-1] = self.u[-1] # Last value is the same as the previous one
     
     def calc_lambdas(self):
         self.lambda1 = self.u_wall - self.c_wall
@@ -179,17 +192,19 @@ class Canal:
     def calc_cell_lambda(self):
         self.l1 = np.zeros(self.n)
         self.l2 = np.zeros(self.n)
+        self.c = np.sqrt(self.gravity*self.h)
         for i in range(self.n):
-            self.l1[i] = self.u[i] - np.sqrt(self.gravity*self.h[i])
-            self.l2[i] = self.u[i] + np.sqrt(self.gravity*self.h[i])
+            self.l1[i] = self.u[i] - self.c[i]
+            self.l2[i] = self.u[i] + self.c[i]
             
             
     def clac_alphas(self):
         self.alpha1 = np.zeros(self.n)
         self.alpha2 = np.zeros(self.n)
         for i in range(self.n-1):
-            self.alpha1[i] = (self.lambda2[i]*(self.h[i+1]-self.h[i]) - self.u[i+1]*self.h[i+1] + self.u[i]*self.h[i])/(self.width[i]*2*self.c_wall[i])
-            self.alpha2[i] = (-self.lambda1[i]*(self.h[i+1]-self.h[i]) + self.u[i+1]*self.h[i+1] - self.u[i]*self.h[i])/(self.width[i]*2*self.c_wall[i])
+            if self.wet_dry[i] == 1:
+                self.alpha1[i] = (self.lambda2[i]*(self.h[i+1]-self.h[i]) - self.u[i+1]*self.h[i+1] + self.u[i]*self.h[i])/(self.width[i]*2*self.c_wall[i])
+                self.alpha2[i] = (-self.lambda1[i]*(self.h[i+1]-self.h[i]) + self.u[i+1]*self.h[i+1] - self.u[i]*self.h[i])/(self.width[i]*2*self.c_wall[i])
         self.alpha1[-1] = self.alpha1[-2]
         self.alpha2[-1] = self.alpha2[-2]
         
@@ -197,10 +212,11 @@ class Canal:
         self.beta1 = np.zeros(self.n)
         self.beta2 = np.zeros(self.n)
         for i in range(self.n-1):
-            Sf_wall = (self.S_f[i] + self.S_f[i+1])/2
-            S0_wall = (self.z[i] - self.z[i+1])/self.dx
-            self.beta1[i] = -(self.gravity*self.h_wall[i]*(S0_wall-Sf_wall)*self.dx)/(2*self.c_wall[i]) # will fail with non constant width
-            self.beta2[i] = -self.beta1[i]
+            if self.wet_dry[i] == 1:
+                Sf_wall = (self.S_f[i] + self.S_f[i+1])/2
+                S0_wall = (self.z[i] - self.z[i+1])/self.dx
+                self.beta1[i] = -(self.gravity*self.h_wall[i]*(S0_wall-Sf_wall)*self.dx)/(2*self.c_wall[i]) # will fail with non constant width
+                self.beta2[i] = -self.beta1[i]
         self.beta1[-1] = self.beta1[-2]
         self.beta2[-1] = self.beta2[-2]
         
@@ -208,8 +224,12 @@ class Canal:
         self.gamma1 = np.zeros(self.n)
         self.gamma2 = np.zeros(self.n)
         for i in range(self.n-1):
-            self.gamma1[i] = self.alpha1[i]-self.beta1[i]/self.lambda1[i]
-            self.gamma2[i] = self.alpha2[i]-self.beta2[i]/self.lambda2[i]
+            if self.wet_dry[i] == 1:
+                self.gamma1[i] = self.alpha1[i]-self.beta1[i]/self.lambda1[i]
+                self.gamma2[i] = self.alpha2[i]-self.beta2[i]/self.lambda2[i]
+            else:
+                self.gamma1[i] = 0
+                self.gamma2[i] = 0
 
         self.gamma1[-1] = self.gamma1[-2]
         self.gamma2[-1] = self.gamma2[-2]
@@ -340,11 +360,31 @@ class Canal:
         self.w[-1] = w_copy[i] - self.dt/self.dx*(uplusL*(w_copy[-1]-w_copy[-2]))
     
     def update_hydro_waves(self):
+        
+        hls = self.h + self.alpha1- np.divide(self.beta1,self.lambda1,where=self.wet_dry>TOL_wet_cells, out=np.zeros_like(self.lambda1))
+        hrs = np.roll(self.h,-1)- self.alpha2+np.divide(self.beta2,self.lambda2,where=self.wet_dry>TOL_wet_cells, out=np.zeros_like(self.lambda2))
+        
+        hls = np.where(np.abs(hls)>TOL_wet_cells,hls,0)
+        hrs = np.where(np.abs(hrs)>TOL_wet_cells,hrs,0)
+        
+        hu_wave_minus =np.zeros(self.n)
+        h_wave_minus = np.zeros(self.n)
+        hu_wave_plus = np.zeros(self.n)
+        h_wave_plus = np.zeros(self.n)
+     
         # # # vector to store the fluxes           
-        hu_wave_minus = self.lambda1_minus*self.gamma1*self.lambda1 + self.lambda2_minus*self.gamma2*self.lambda2
-        h_wave_minus  = self.lambda1_minus*self.gamma1 + self.lambda2_minus*self.gamma2
-        hu_wave_plus  = self.lambda1_plus*self.gamma1*self.lambda1 + self.lambda2_plus*self.gamma2*self.lambda2 
-        h_wave_plus   = self.lambda1_plus*self.gamma1 + self.lambda2_plus*self.gamma2
+
+        for i in range(self.n-1):
+            if self.h[i+1]<TOL_wet_cells and hrs[i]<TOL_wet_cells:
+                h_wave_minus[i]  = self.lambda1[i]*self.gamma1[i] + self.lambda2[i]*self.gamma2[i]
+            elif self.h[i]<TOL_wet_cells and hls[i]<TOL_wet_cells:
+                h_wave_plus[i]   = self.lambda1[i]*self.gamma1[i] + self.lambda2[i]*self.gamma2[i]
+            else:
+                hu_wave_minus[i] = self.lambda1_minus[i]*self.gamma1[i]*self.lambda1[i] + self.lambda2_minus[i]*self.gamma2[i]*self.lambda2[i]
+                h_wave_minus[i]  = self.lambda1_minus[i]*self.gamma1[i] + self.lambda2_minus[i]*self.gamma2[i]
+                hu_wave_plus[i]  = self.lambda1_plus[i]*self.gamma1[i]*self.lambda1[i] + self.lambda2_plus[i]*self.gamma2[i]*self.lambda2[i] 
+                h_wave_plus[i]   = self.lambda1_plus[i]*self.gamma1[i] + self.lambda2_plus[i]*self.gamma2[i]
+
 
 
         self.h -= self.dt/self.dx*(h_wave_minus+np.roll(h_wave_plus,1))
@@ -356,18 +396,31 @@ class Canal:
         self.hu[0] = self.left_u*self.left_height
         self.hu[-1] = self.right_u*self.right_height
         
+        # update w
+        u = np.divide(self.hu, self.h, where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
+        u_plus = 0.5*(u+np.abs(u))
+        u_minus = 0.5*(u-np.abs(u))
+        new_w = self.w - self.dt/self.dx*(u_plus*(self.w-np.roll(self.w,1))+u_minus*(np.roll(self.w,-1)-self.w))
+        new_w[0] = new_w[1]
+        new_w[-1] = new_w[-2]
+        self.w = new_w
+                             
     def update_hydro_flux(self):
+        
+        right_front = np.where((self.z != np.roll(self.z, -1)) & (np.roll(self.z, -1) > self.h+self.z), 0, 1)
+        left_front = np.where((self.z != np.roll(self.z, -1)) & (np.roll(self.z, -1)+np.roll(self.h,-1) < self.z), 0, 1)
         # # # vector to store the fluxes           
-        hu_flux_minus = self.lambda1_minus*self.gamma1*self.lambda1 + self.lambda2_minus*self.gamma2*self.lambda2
-        h_flux_minus  = self.lambda1_minus*self.gamma1 + self.lambda2_minus*self.gamma2
-        hu_flux_plus  = -self.lambda1_plus*self.gamma1*self.lambda1 - self.lambda2_plus*self.gamma2*self.lambda2 
-        h_flux_plus   = -self.lambda1_plus*self.gamma1 - self.lambda2_plus*self.gamma2
+        hu_flux_minus = (self.lambda1_minus*self.gamma1*self.lambda1 + self.lambda2_minus*self.gamma2*self.lambda2)*right_front*left_front
+        h_flux_minus  = (self.lambda1_minus*self.gamma1 + self.lambda2_minus*self.gamma2)*right_front*left_front
+        hu_flux_plus  = (-self.lambda1_plus*self.gamma1*self.lambda1 - self.lambda2_plus*self.gamma2*self.lambda2 )*right_front*left_front
+        h_flux_plus   = (-self.lambda1_plus*self.gamma1 - self.lambda2_plus*self.gamma2)*right_front*left_front
 
         # update fluxes with physical fluxes
         hu_flux_minus += self.hu*self.h+0.5*self.gravity*self.h**2
         h_flux_minus += self.hu
         hu_flux_plus += np.roll(self.hu,-1)*np.roll(self.h,-1)+0.5*self.gravity*np.roll(self.h,-1)**2
         h_flux_plus += np.roll(self.hu,-1)
+        
 
         self.h -= self.dt/self.dx*(h_flux_minus-np.roll(h_flux_plus,1))
         self.hu -= self.dt/self.dx*(hu_flux_minus-np.roll(hu_flux_plus,1))  
@@ -377,6 +430,14 @@ class Canal:
         self.h[-1] = self.right_height
         self.hu[0] = self.left_u*self.left_height
         self.hu[-1] = self.right_u*self.right_height
+        
+        # update w
+        hw_flux_minus = np.where(h_flux_minus>0, h_flux_minus*self.w, h_flux_minus*np.roll(self.w,-1))
+        new_hw = self.hw - self.dt/self.dx*(hw_flux_minus+np.roll(hw_flux_minus,1))
+        new_hw[0] = new_hw[1]
+        new_hw[-1] = new_hw[-2]
+        self.hw = new_hw
+        self.w = np.divide(self.hw, self.h, where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
                
     # Calculate variable vectors
     def debug_calc_vectors(self):
@@ -422,27 +483,28 @@ class Canal:
   # Calculate variable vectors
     def calc_vectors(self):
         
-        self.u = self.hu/self.h
-        self.hw = self.w*self.h
+        # Calculate cell variables
         self.calc_hidraulic_radius()
-      
         self.calc_S_manning()
+        self.calc_cell_lambda()
         
+        # Calculate wall variables
         self.calc_h_wall()
         self.calc_c_wall()
-        self.calc_u_wall()
-        
-        self.calc_lambdas()
-        self.calc_cell_lambda()
+        self.calc_u_wall()        
+        self.calc_lambdas()        
         self.clac_alphas()
         self.calc_betas()
         self.calc_gammas()
         
+    
         
         self.lambda1_minus = np.where(self.lambda1 < 0, self.lambda1, 0)
         self.lambda2_minus = np.where(self.lambda2 < 0, self.lambda2, 0)
         self.lambda1_plus = np.where(self.lambda1 > 0, self.lambda1, 0)
         self.lambda2_plus = np.where(self.lambda2 > 0, self.lambda2, 0)
+        
+    
         
         if self.activate_entropy_fix:
             a = self.check_entropy()
@@ -450,9 +512,24 @@ class Canal:
                 self.entropy_fix()
 
 
+    def check_wet_dry(self):
+        # 1 if wet, 0 if dry
+        self.wet_dry = np.zeros(self.n)
+        for i in range(self.n-1):
+            self.wet_dry[i] = 1 if (self.h[i]>TOL_wet_cells or self.h[i+1]>TOL_wet_cells) else 0
+            if self.wet_dry[i] == 0:
+                self.hu[i] = 0
+                self.hu[i+1] = 0
+                
+    def update_cell_values(self):
+            self.u = np.divide(self.hu, self.h, where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
+            self.w = np.divide(self.hw, self.h, where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
+
     ##### Temporal loop #####
     def temporal_loop(self, mode = 'flux'):
+        self.scheme = mode
         self.t_int = 1
+        self.check_wet_dry()
         while self.real_time < self.end_time:
             self.calc_vectors()
             self.calc_dt()
@@ -461,28 +538,44 @@ class Canal:
                     self.update_hydro_flux()
                 case 'wave':
                     self.update_hydro_waves()
+                
+            self.check_wet_dry()
+            self.update_cell_values()
+
+                    
+            # update non-hydrostatic variables
+            # self.non_hydrostatic_correction()
+            
             self.real_time += self.dt
             if abs(self.real_time - self.out_counter + self.out_freq) < 1e-6:
                 self.plot_results()
                 # time.sleep(0.01)
             self.t_int += 1
-            if self.t_int % 100 == 0:
+            if self.t_int % 1 == 0:
                 if self.check_fix: logger.info(f"Time: {self.real_time:.2f} s")
 
 
     # Plot the results
     def plot_results(self):
-        for ax in self.ax:
-            ax.clear()
-            ax.grid()   
+        for ax_row in self.ax:
+            for ax in ax_row:
+                ax.clear()
+                ax.grid()   
         x = np.linspace(0,self.length,self.n)
-        self.ax[0].plot(x,self.h+self.z,label='h')
+        self.ax[0,0].plot(x,self.h,label='h')
+        self.ax[0,0].set_title('h')
         # self.ax[0].set_ylim(min(self.left_height,self.right_height)-0.1,max(self.left_height,self.right_height)+0.1)
-        self.ax[1].plot(x,self.u,label='u')
-        Fr = self.u/np.sqrt(self.gravity*self.h)
-        self.ax[2].plot(x,self.w,label='w')
+        self.ax[1,0].plot(x,self.u,label='u')
+        self.ax[1,0].set_title('u')
+        # Fr =np.where(self.h>TOL_wet_cells,self.u/np.sqrt(self.gravity*self.h),0)
+        Fr = np.divide(self.u, np.sqrt(self.gravity*self.h), where=self.h>TOL_wet_cells, out=np.zeros_like(self.h))
+        self.ax[0,1].plot(x,self.w,label='w')
+        self.ax[0,1].set_title('vertical velocity')
+        self.ax[1,1].plot(x,self.p,label='P')
+        self.ax[1,1].set_title('Pressure')
         # plot z bed solid
-        self.ax[0].fill_between(x,0,self.z,color='black',alpha=0.5)
+        self.ax[0,0].fill_between(x,0,self.z,color='black',alpha=0.2)
+      
         
         # Exact solution if available
         if self.exact:
@@ -492,7 +585,7 @@ class Canal:
         self.fig.suptitle(f"Time: {self.real_time:.2f} s")
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        self.fig.savefig(f"img/state_{self.t_int}.png")
+        self.fig.savefig(f"img/state_{self.t_int}_{self.scheme}.png")
 
     ### elliptic non-hydrostatic model ###
     def Tridiagonal(self):
@@ -520,7 +613,11 @@ class Canal:
         self.D[0] = self.D[1]
             
 
-    def TDMA(a,b,c,d):
+    def TDMA(self):
+        a = self.A_sub_diag
+        b = self.B_diag
+        c = self.C_sup_diag
+        d = self.D
         n = len(d)
         w= np.zeros(n-1,float)
         g= np.zeros(n, float)
@@ -536,8 +633,24 @@ class Canal:
         p[n-1] = g[n-1]
         for i in range(n-1,0,-1):
             p[i-1] = g[i-1] - w[i-1]*p[i]
-        return p
+        self.p = p
 
+    def non_hydrostatic_correction(self):
+        self.Tridiagonal()
+        self.TDMA()
+        self.p[0] = self.rho*self.gravity*self.h[0]
+        self.p[-1] = self.rho*self.gravity*self.h[-1]
+        self.p = self.p
+        
+        # update hu
+        self.hu = self.hu - 1*self.dt/self.dx*(self.h*(np.roll(self.p,-1)-self.p)+\
+            (np.roll(self.p,-1)+self.p)*(np.roll(self.h,-1)-\
+                np.roll(self.h,1))/4+\
+                    2*(np.roll(self.z,-1)-np.roll(self.z,1)))
+        
+        # update w
+        self.w = self.w - 2*self.dt*self.p/self.h_wall
+        
 
 
 
