@@ -1,6 +1,6 @@
 {
     "length": 1000,
-    "delta x": 2,
+    "delta x": 0.5,
     "base width": 1.0,
     "z bed": 0.0,
     "angle": 90, 

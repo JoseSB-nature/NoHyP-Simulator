@@ -13,7 +13,11 @@ plt.style.use("science")
 
 TOL_WET_CELLS = 1e-12
 
+TOL9 = 1e-9
+
 DEBUG = False
+
+P0 = 0.0  # Reference pressure in Pa in the boundary conditions
 
 
 class Canal:
@@ -490,7 +494,7 @@ class Canal:
             self.hu, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
         )
         u_plus = 0.5 * (u + np.abs(u))
-        u_minus = 0.5 * (u - np.abs(u))
+        u_minus = 0.5 * (np.roll(u, -1) - np.abs(np.roll(u, -1)))
         new_w = self.w - self.dt / self.dx * (
             u_plus * (self.w - np.roll(self.w, 1))
             + u_minus * (np.roll(self.w, -1) - self.w)
@@ -583,50 +587,6 @@ class Canal:
         )
 
     # Calculate variable vectors
-    def debug_calc_vectors(self):
-        self.u = self.hu / self.h
-        t0 = time.time()
-        self.calc_hidraulic_radius()
-        t1 = time.time()
-
-        self.calc_S_manning()
-        t2 = time.time()
-
-        self.calc_h_wall()
-        self.calc_c_wall()
-        self.calc_u_wall()
-        t4 = time.time()
-
-        self.calc_lambdas()
-        self.calc_cell_lambda()
-        self.clac_alphas()
-        self.calc_betas()
-        self.calc_gammas()
-        t5 = time.time()
-
-        self.calc_eigenvectors()
-        t6 = time.time()
-
-        if self.activate_entropy_fix:
-            a = self.check_entropy()
-            if a:
-                logger.info(f"Entropy fix activated")
-                self.entropy_fix()
-        t7 = time.time()
-        # add time usage in % of total time
-        total_time = t7 - t0
-        if self.check_fix:
-            logger.debug(
-                f"Total time: {total_time:.2f}\n\
-            R:{(t1-t0)/total_time:.2f}; ({t1-t0})\n\
-            S:{(t2-t1)/total_time:.2f}; ({t2-t1})\n\
-            walls:{(t4-t2)/total_time:.2f}; ({t4-t2})\n\
-            lambda:{(t5-t4)/total_time:.2f}; ({t5-t4})\n\
-            eigenvectors:{(t6-t5)/total_time:.2f}; ({t6-t5})\n\
-            entropy fix:{(t7-t6)/total_time:.2f}; ({t7-t6})\n"
-            )
-
-    # Calculate variable vectors
     def calc_vectors(self):
 
         # Calculate cell variables
@@ -669,9 +629,12 @@ class Canal:
         self.u = np.divide(
             self.hu, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
         )
-        self.w = np.divide(
-            self.hw, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
-        )
+        if self.scheme == "flux":
+            self.w = np.divide(
+                self.hw, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
+            )
+        elif self.scheme == "wave":
+            self.hw = self.h * self.w
 
     ##### Temporal loop #####
     def temporal_loop(self, mode="flux"):
@@ -725,7 +688,6 @@ class Canal:
         )
 
         self.ax[0, 1].plot(x, self.w, label="Fr")
-
 
         self.ax[0, 1].set_title("W")
         self.ax[1, 1].plot(x, self.p, label="P")
@@ -797,37 +759,36 @@ class Canal:
         self.D = np.zeros(self.n)  # termino independiente
 
         # Auxiliar variables
-        phi = (
+        phi = 0.5 * (
             np.roll(self.h, -1)
             + 2 * np.roll(self.z, -1)
-            - np.roll(self.h, -1)
-            - 2 * np.roll(self.z, -1)
+            - np.roll(self.h, 1)
+            - 2 * np.roll(self.z, 1)
         )  # mean phi of two walls [i+1]-[i-1]
-        phi_edge = -(
+        phi_edge = (
             self.h + 2 * self.z - np.roll(self.h, 1) - 2 * np.roll(self.z, 1)
-        )  # mean phi of two cells [i]-[i+1]
-        h_edge = 0.5 * (self.h + np.roll(self.h, -1))  # mean h of two cells [i]-[i+1]
-        q_edge = 0.5 * (self.hu + np.roll(self.hu, -1))  # mean q of two cells [i]-[i+1]
+        )  # mean phi of two cells [i]-[i-1]
+        h_edge = 0.5 * (self.h + np.roll(self.h, 1))  # mean h of two cells [i]-[i-1]
+        q_edge = 0.5 * (self.hu + np.roll(self.hu, 1))  # mean q of two cells [i]-[i-1]
 
         # Calculate the coefficients of the tridiagonal matrix
-        self.A_sub_diag = (phi - 2 * self.h) * (phi_edge + 2 * h_edge)
+        self.A_sub_diag = (np.roll(phi, 1) - 2 * np.roll(self.h, 1)) * (
+            phi_edge + 2 * h_edge
+        )
         self.B_diag = (
             16 * self.dx**2
-            + phi_edge
-            * (np.roll(phi, -1) / 2 + phi / 2 - 2 * np.roll(self.h, -1) + 2 * self.h)
-            + 2 * h_edge * (phi / 2 - np.roll(phi, -1) / 2 + 2 * np.roll(self.h, -1))
+            + phi_edge * (np.roll(phi, 1) + phi + 2 * np.roll(self.h, 1) - 2 * self.h)
+            + 2 * h_edge * (np.roll(phi, 1) - phi + 4 * h_edge)
         )
-        self.C_sup_diag = (np.roll(phi, -1) + 2 * np.roll(self.h, -1)) * (
-            phi_edge - 2 * h_edge
-        )
+        self.C_sup_diag = (phi + 2 * self.h) * (phi_edge - 2 * h_edge)
         self.D = -(
             4
-            * self.dx**2
+            * self.dx
             / self.dt
             * (
-                h_edge * (np.roll(self.hu, 1) - self.hu)/self.dx
-                - q_edge * phi_edge / self.dx
-                + 2 * h_edge * self.w
+                self.h * (self.hu - np.roll(self.hu, 1))
+                - q_edge * phi_edge
+                + 2 * self.dx * h_edge * self.w
             )
         )
 
@@ -835,7 +796,7 @@ class Canal:
         self.B_diag[0] = self.B_diag[1]
         self.C_sup_diag[0] = self.C_sup_diag[1]
         self.D[0] = self.D[1]
-        
+
         self.A_sub_diag[-1] = self.A_sub_diag[-2]  # CONTOUR
         self.B_diag[-1] = self.B_diag[-2]
         self.C_sup_diag[-1] = self.C_sup_diag[-2]
@@ -859,41 +820,58 @@ class Canal:
         b = self.B_diag
         c = self.C_sup_diag
         d = self.D
-        n = len(d)
-        w = np.zeros(n - 1, float)
-        g = np.zeros(n, float)
-        p = np.zeros(n, float)
+        
+        r = np.zeros(self.n)
+        rp = np.zeros(self.n)
+        bp = np.zeros(self.n) 
+        
+        for i in range(2, self.n-1):
+            r[i] = d[i]
+            
+        r[1] = d[1] - a[1] * P0
+        rp[1] = r[1]
+        bp[1] = b[1]
 
-        w[0] = c[0] / b[0]
-        g[0] = d[0] / b[0]
+        for i in range(2, self.n):
+            if abs(bp[i-1]) > TOL9:
+                bp[i] = b[i] - a[i] * c[i-1] / bp[i-1]
+                rp[i] = r[i] - rp[i-1] * a[i] / bp[i-1]
+            else:
+                bp[i] = 0
+                rp[i] = 0
 
-        for i in range(1, n - 1):
-            w[i] = c[i] / (b[i] - a[i] * w[i - 1])
-        for i in range(1, n):
-            g[i] = (d[i] - a[i - 1] * g[i - 1]) / (b[i] - a[i - 1] * w[i - 1])
-        p[n - 1] = g[n - 1]
-        for i in range(n - 1, 0, -1):
-            p[i - 1] = g[i - 1] - w[i - 1] * p[i]
-        self.p = p
+        if abs(bp[-1]) > TOL9:
+            self.p[-1] = rp[-1] / bp[-1]
+        else:
+            self.p[-1] = 0
+            
+        self.p[0] = P0
+        
+        for i in range(self.n-2, 0, -1):
+            if abs(bp[i]) > TOL9:
+                self.p[i] = (rp[i] - c[i] * self.p[i+1]) / bp[i]
+            else:
+                self.p[i] = 0
+
 
     def non_hydrostatic_correction(self):
         self.Tridiagonal()
         self.TDMA()
-        self.p[0] = self.p[1]  # self.rho*self.gravity*self.h[0]
-        self.p[-1] = self.p[-2]  # self.rho*self.gravity*self.h[-1]
-        self.p = 1 * self.p
+        # self.p[0] = self.p[1]  # self.rho*self.gravity*self.h[0]
+        # self.p[-1] = self.p[-2]  # self.rho*self.gravity*self.h[-1]
+        # self.p = 1 * self.p
 
-        # update hu
-        self.hu = self.hu - 1 * self.dt / self.dx * (
-            self.h * (np.roll(self.p, -1) - self.p)
-            + (np.roll(self.p, -1) + self.p)
-            * (np.roll(self.h, -1) - np.roll(self.h, 1))
-            / 4
-            + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1))
-        )
+        # # update hu
+        # self.hu = self.hu - 1 * self.dt / self.dx * (
+        #     self.h * (np.roll(self.p, -1) - self.p)
+        #     + (np.roll(self.p, -1) + self.p)
+        #     * (np.roll(self.h, -1) - np.roll(self.h, 1))
+        #     / 4
+        #     + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1))
+        # )
 
-        # update w
-        self.w = self.w - 2 * self.dt * self.p / self.h_wall
+        # # update w
+        # self.w = self.w - 2 * self.dt * self.p / self.h_wall
 
     # SOLITON
     def h_sw_function(self, x, t):
