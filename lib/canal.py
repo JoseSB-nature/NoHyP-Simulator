@@ -26,7 +26,7 @@ class Canal:
     online plotting is available, the canal can be simulated with a flux or wave scheme
     """
 
-    def __init__(self):
+    def __init__(self, test = False, canal = None, case = None):
 
         self.gravity = 9.81  # Gravity acceleration in m/s^2
         self.rho = 1  # Water density in kg/m^3
@@ -34,9 +34,12 @@ class Canal:
         self.real_time = 0.0  # Real time of the simulation
         self.t_int = 0  # Time step counter
 
-        path_config = "config/canal.json"
-        with open(path_config, "r") as f:
-            config = json.load(f)
+        if test:
+            config = canal
+        else:
+            path_config = "config/canal.json"
+            with open(path_config, "r") as f:
+                config = json.load(f)
 
         length = config["length"]  # Length of the canal in m
         self.length = length
@@ -119,8 +122,11 @@ class Canal:
         logger.info(f"Initial mode set to {mode}")
         match mode:
             case "DAMBREAK":
-                with open("config/dambreak.json", "r") as f:
-                    dam_break = json.load(f)
+                if test:
+                    dam_break = case
+                else:
+                    with open("config/dambreak.json", "r") as f:
+                        dam_break = json.load(f)
 
                 position = dam_break["position"]
                 left_height = dam_break["left height"]
@@ -165,8 +171,11 @@ class Canal:
                         )
 
             case "SOLITON":
-                with open("config/soliton.json", "r") as f:
-                    soliton = json.load(f)
+                if test:
+                    soliton = case
+                else:
+                    with open("config/soliton.json", "r") as f:
+                        soliton = json.load(f)
 
                 Height0 = soliton["H0"]
                 Amplitude = soliton["A"]
@@ -657,15 +666,18 @@ class Canal:
             self.non_hydrostatic_correction()
 
             self.real_time += self.dt
-            if abs(self.real_time - self.out_counter + self.out_freq) < 1e-6:
-                self.plot_TDMA()
-                # self.plot_results()
-                # time.sleep(0.01)
-            self.t_int += 1
-            if self.t_int % 100 == 0:
-                if self.check_fix:
-                    print("\n")
-                    logger.warning(f"Entropy fix at Time: {self.real_time:.2f} s")
+            if self.out_freq == 'no output':
+                continue
+            else:
+                if abs(self.real_time - self.out_counter + self.out_freq) < 1e-6:
+                    self.plot_TDMA()
+                    # self.plot_results()
+                    # time.sleep(0.01)
+                self.t_int += 1
+                if self.t_int % 100 == 0:
+                    if self.check_fix:
+                        print("\n")
+                        logger.warning(f"Entropy fix at Time: {self.real_time:.2f} s")
 
     # Plot the results
     def plot_results(self):
@@ -853,7 +865,6 @@ class Canal:
             else:
                 self.p[i] = 0
 
-
     def non_hydrostatic_correction(self):
         self.Tridiagonal()
         self.TDMA()
@@ -862,7 +873,7 @@ class Canal:
         # self.p = 1 * self.p
 
         # # update hu
-        # self.hu = self.hu - 1 * self.dt / self.dx * (
+        # self.hu = self.hu - self.dt / self.dx * (
         #     self.h * (np.roll(self.p, -1) - self.p)
         #     + (np.roll(self.p, -1) + self.p)
         #     * (np.roll(self.h, -1) - np.roll(self.h, 1))

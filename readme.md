@@ -2,16 +2,32 @@
 
 ## Description
 
-A brief description of your project. Explain what your project is about and what it does.
+NoHyP simulator is a computational application for solving SWE, it has features related to Non-Hydrostatic Pressure
 
 ## Installation
 
 Provide code and explanations on how to install your project.
 
 ```bash
-git clone https://github.com/yourusername/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/JoseSB-nature/NoHyP-Simulator.git
 ```
+
+You will need to get your python environment to satisfy the current requirements
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+
+# Usage
+You need to create the following folders:
+
+- _img_: used to save simulation images
+- _cases_: to save some cases configuration, it allows you to replicate the conditions used for an specific test
+
+The ```main.py``` example show an specific run case structure, in general, to use the canal _Class_ you can proceed as follows:
 
 ```python
 from bib.canal import Canal
@@ -19,12 +35,3 @@ from bib.canal import Canal
 # Create a new Canal object
 river = Canal()
 ```
-
-# Usage
-Explain how to use your project. Provide examples.
-
-# Contributing
-Explain how to contribute to your project.
-
-# License
-Include information about the license. If you're using a standard license, you can simply state the license type (e.g., MIT, GPL, etc.) and include a link to the full license text.
