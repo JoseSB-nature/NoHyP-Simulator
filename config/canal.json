@@ -1,9 +1,9 @@
 {
     "length": 1000,
-    "delta x": 1,
+    "delta x": 5,
     "base width": 1.0,
     "z bed": 0.0,
-    "angle": 90, 
+    "angle": 90,
     "manning": 0.00,
     "initial mode": "DAMBREAK",
     "entropy fix": "True",

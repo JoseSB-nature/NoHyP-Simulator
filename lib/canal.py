@@ -199,9 +199,10 @@ class Canal:
                 pass
 
         ## initialize plots
-        plt.ion()
-        self.fig, self.ax = plt.subplots(2, 2, figsize=(10, 8))
-        self.plot_results()  # plot initial conditions
+        if not test:
+            plt.ion()
+            self.fig, self.ax = plt.subplots(2, 2, figsize=(10, 8))
+            self.plot_results()  # plot initial conditions
 
     # Calule te hydraulic radius of the trapezoidal canal in terms of B and angle
     def calc_hidraulic_radius(self):

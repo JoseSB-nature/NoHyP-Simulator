@@ -2,3 +2,4 @@ img/*
 .venv/
 cases/*
 lib/__pycache__/*
+test/__pycache__/*
