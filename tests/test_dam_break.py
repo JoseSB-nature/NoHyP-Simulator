@@ -1,6 +1,8 @@
 import sys
-sys.path.append('/home/sakura-rebel/Desktop/PHD/NoHyP-Simulator/lib')
-print(sys.path)
+import os
+lib_path = os.path.abspath('lib')
+sys.path.append(lib_path)
+# print(sys.path)
 from canal import *
 import numpy as np
 
