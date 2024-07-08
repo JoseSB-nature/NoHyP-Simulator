@@ -26,7 +26,7 @@ class Canal:
     online plotting is available, the canal can be simulated with a flux or wave scheme
     """
 
-    def __init__(self, test = False, canal = None, case = None):
+    def __init__(self, test=False, canal=None, case=None):
 
         self.gravity = 9.81  # Gravity acceleration in m/s^2
         self.rho = 1  # Water density in kg/m^3
@@ -670,12 +670,12 @@ class Canal:
             self.non_hydrostatic_correction()
 
             self.real_time += self.dt
-            if self.out_freq == 'no output':
+            if self.out_freq == "no output":
                 continue
             else:
                 if abs(self.real_time - self.out_counter + self.out_freq) < 1e-6:
-                    self.plot_TDMA()
-                    # self.plot_results()
+                    # self.plot_TDMA()
+                    self.plot_results()
                     # time.sleep(0.01)
                 self.t_int += 1
                 if self.t_int % 100 == 0:
@@ -836,22 +836,22 @@ class Canal:
         b = self.B_diag
         c = self.C_sup_diag
         d = self.D
-        
+
         r = np.zeros(self.n)
         rp = np.zeros(self.n)
-        bp = np.zeros(self.n) 
-        
-        for i in range(2, self.n-1):
+        bp = np.zeros(self.n)
+
+        for i in range(2, self.n - 1):
             r[i] = d[i]
-            
+
         r[1] = d[1] - a[1] * P0
         rp[1] = r[1]
         bp[1] = b[1]
 
         for i in range(2, self.n):
-            if abs(bp[i-1]) > TOL9:
-                bp[i] = b[i] - a[i] * c[i-1] / bp[i-1]
-                rp[i] = r[i] - rp[i-1] * a[i] / bp[i-1]
+            if abs(bp[i - 1]) > TOL9:
+                bp[i] = b[i] - a[i] * c[i - 1] / bp[i - 1]
+                rp[i] = r[i] - rp[i - 1] * a[i] / bp[i - 1]
             else:
                 bp[i] = 0
                 rp[i] = 0
@@ -860,33 +860,41 @@ class Canal:
             self.p[-1] = rp[-1] / bp[-1]
         else:
             self.p[-1] = 0
-            
+
         self.p[0] = P0
-        
-        for i in range(self.n-2, 0, -1):
+
+        for i in range(self.n - 2, 0, -1):
             if abs(bp[i]) > TOL9:
-                self.p[i] = (rp[i] - c[i] * self.p[i+1]) / bp[i]
+                self.p[i] = (rp[i] - c[i] * self.p[i + 1]) / bp[i]
             else:
                 self.p[i] = 0
+        # print(self.p[497:504])
+        # input()
 
     def non_hydrostatic_correction(self):
         self.Tridiagonal()
         self.TDMA()
         # self.p[0] = self.p[1]  # self.rho*self.gravity*self.h[0]
         # self.p[-1] = self.p[-2]  # self.rho*self.gravity*self.h[-1]
-        # self.p = 1 * self.p
+        self.p = 0.7 * self.p
+        # print(f'\n dt:{self.real_time:.3}, pmax:{max(self.p)}')
 
-        # # update hu
-        # self.hu = self.hu - self.dt / self.dx * (
-        #     self.h * (np.roll(self.p, -1) - self.p)
-        #     + (np.roll(self.p, -1) + self.p)
-        #     * (np.roll(self.h, -1) - np.roll(self.h, 1))
-        #     / 4
-        #     + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1))
+        # # # update hu
+        # self.hu -= (
+        #     self.dt
+        #     / self.dx
+        #     * (
+        #         self.h * (np.roll(self.p, 1) - self.p)
+        #         + (np.roll(self.p, 1) + self.p)
+        #         * (np.roll(self.h, -1) - np.roll(self.h, 1)
+        #         + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
+        #         / 4
+        #     )
         # )
 
-        # # update w
-        # self.w = self.w - 2 * self.dt * self.p / self.h_wall
+        # # # update w
+        # h_edge = 0.5 * (self.h + np.roll(self.h, 1))
+        # self.w += self.dt * 2 * self.p / h_edge
 
     # SOLITON
     def h_sw_function(self, x, t):
