@@ -86,7 +86,8 @@ class Canal:
 
         self.x = np.linspace(0, length, self.n)
 
-        self.prog_bar = Bar("Processing", max=self.end_time / self.out_freq)
+        if not test:
+            self.prog_bar = Bar("Processing", max=self.end_time / self.out_freq)
 
         # set the width of the canal
         if width == "file":
@@ -404,7 +405,10 @@ class Canal:
         if self.real_time + self.dt > self.out_counter:
             self.dt = self.out_counter - self.real_time
             self.out_counter += self.out_freq
-            self.prog_bar.next()
+            try:
+                self.prog_bar.next()
+            except:
+                pass
         if self.real_time + self.dt > self.end_time:
             self.dt = self.end_time - self.real_time
         self.dt_list.append(self.dt)
