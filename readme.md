@@ -35,3 +35,7 @@ from bib.canal import Canal
 # Create a new Canal object
 river = Canal()
 ```
+
+# tests and benchmarks
+
+The Simulator provides you with a simple way of runing test cases, only run ```pytest```. The tests are also required on a commit on the main branch

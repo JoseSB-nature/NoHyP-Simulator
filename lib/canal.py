@@ -205,7 +205,8 @@ class Canal:
             self.plot_results()  # plot initial conditions
 
     # Calule te hydraulic radius of the trapezoidal canal in terms of B and angle
-    def calc_hidraulic_radius(self):
+    def _calc_hidraulic_radius(self):
+        """Calculate the hydraulic radius of the canal in terms of the depth and the width of the canal, rectangular channel is considered"""
         # self.R = self.h*(self.width +self.h/np.tan(self.angle))/(self.width + 2*self.h/np.sin(self.angle))
         # R = np.where(self.h>TOL_wet_cells,(2*self.h+self.width)/(self.h*self.width),0)
         self.R = np.divide(
@@ -216,7 +217,8 @@ class Canal:
         )
 
     # Calculate the friction slope of the canal
-    def calc_S_manning(self):
+    def _calc_S_manning(self):
+        """Calculate the friction slope of the canal in terms of the manning coefficient and the hydraulic radius of the canal"""
         # S_f = np.where(self.h>TOL_wet_cells,(self.u*self.manning)**2/(self.R**(4/3)),0)
         self.S_f = np.divide(
             (self.u * self.manning) ** 2,
@@ -225,7 +227,8 @@ class Canal:
             out=np.zeros_like(self.h),
         )
 
-    def calc_S0(self, A=None):
+    def _calc_S0(self, A=None):
+        """'Calculate the source term of the canal, energetic aproach is used, can be set to the source term model with the A argument"""
         dz = np.roll(self.z, -1) - self.z
         d = self.h + self.z
         dz_var = np.ones(self.n) * np.nan
@@ -253,14 +256,14 @@ class Canal:
         self.S0 = Tb3
 
     ############################ VARIABLES CALCULATION FOR ROE SCHEME ############################
-    def calc_h_wall(self):
+    def _calc_h_wall(self):
         self.h_wall = np.zeros(self.n)
         for i in range(self.n - 1):
             self.h_wall[i] = (self.h[i] + self.h[i + 1]) / 2
         self.h_wall[-1] = self.h[-1]  # Last value is the same as the previous one
 
     # c average velocity of the canal
-    def calc_c_wall(self):
+    def _calc_c_wall(self):
         self.c_wall = np.zeros(self.n)
         for i in range(self.n - 1):
             self.c_wall[i] = np.sqrt(
@@ -268,7 +271,7 @@ class Canal:
             )  # This formulation could need adjustments for width
         self.c_wall[-1] = self.c[-1]  # Last value is the same as the previous one
 
-    def calc_u_wall(self):
+    def _calc_u_wall(self):
         self.u_wall = np.zeros(self.n)
         for i in range(self.n - 1):
             if self.wet_dry[i] == 1:
@@ -280,11 +283,11 @@ class Canal:
                 self.u_wall[i] = 0
         self.u_wall[-1] = self.u[-1]  # Last value is the same as the previous one
 
-    def calc_lambdas(self):
+    def _calc_lambdas(self):
         self.lambda1 = self.u_wall - self.c_wall
         self.lambda2 = self.u_wall + self.c_wall
 
-    def calc_cell_lambda(self):
+    def _calc_cell_lambda(self):
         self.l1 = np.zeros(self.n)
         self.l2 = np.zeros(self.n)
         self.c = np.sqrt(self.gravity * self.h)
@@ -292,7 +295,7 @@ class Canal:
             self.l1[i] = self.u[i] - self.c[i]
             self.l2[i] = self.u[i] + self.c[i]
 
-    def clac_alphas(self):
+    def _clac_alphas(self):
         self.alpha1 = np.zeros(self.n)
         self.alpha2 = np.zeros(self.n)
         for i in range(self.n - 1):
@@ -310,7 +313,7 @@ class Canal:
         self.alpha1[-1] = self.alpha1[-2]
         self.alpha2[-1] = self.alpha2[-2]
 
-    def calc_betas(self):
+    def _calc_betas(self):
         self.beta1 = np.zeros(self.n)
         self.beta2 = np.zeros(self.n)
         for i in range(self.n - 1):
@@ -326,7 +329,7 @@ class Canal:
         self.beta1[-1] = self.beta1[-2]
         self.beta2[-1] = self.beta2[-2]
 
-    def calc_gammas(self):
+    def _calc_gammas(self):
         self.gamma1 = np.zeros(self.n)
         self.gamma2 = np.zeros(self.n)
         for i in range(self.n - 1):
@@ -587,15 +590,18 @@ class Canal:
         self.hu[-1] = self.right_u * self.right_height
 
         # update w
-        hw_flux_minus = np.where(
-            h_flux_minus > 0, h_flux_minus * self.w, h_flux_minus * np.roll(self.w, -1)
-        )
-        new_hw = self.hw - self.dt / self.dx * (
-            hw_flux_minus + np.roll(hw_flux_minus, 1)
-        )
-        new_hw[0] = new_hw[1]
-        new_hw[-1] = new_hw[-2]
-        self.hw = new_hw
+        hu_dw = (
+            self.hu
+            + self.lambda1_minus * self.gamma1
+            + self.lambda2_minus * self.gamma2
+        )  # h flux minus
+        hw_flux_minus = np.where(hu_dw > 0, hu_dw * self.w, hu_dw * np.roll(self.w, -1))  # w transport
+        self.hw = self.hw - self.dt / self.dx * (
+            hw_flux_minus - np.roll(hw_flux_minus, 1) 
+        )  # update hw with (huw)⁻_{i+1/2} - (huw)⁻_{i-1/2}
+        self.hw[0] = self.hw[1]
+        self.hw[-1] = self.hw[-2]
+
         self.w = np.divide(
             self.hw, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
         )
@@ -604,19 +610,19 @@ class Canal:
     def calc_vectors(self):
 
         # Calculate cell variables
-        self.calc_hidraulic_radius()
-        self.calc_S_manning()
-        self.calc_S0()  # Can set A as an argument to switch between source terms model
-        self.calc_cell_lambda()
+        self._calc_hidraulic_radius()
+        self._calc_S_manning()
+        self._calc_S0()  # Can set A as an argument to switch between source terms model
+        self._calc_cell_lambda()
 
         # Calculate wall variables
-        self.calc_h_wall()
-        self.calc_c_wall()
-        self.calc_u_wall()
-        self.calc_lambdas()
-        self.clac_alphas()
-        self.calc_betas()
-        self.calc_gammas()
+        self._calc_h_wall()
+        self._calc_c_wall()
+        self._calc_u_wall()
+        self._calc_lambdas()
+        self._clac_alphas()
+        self._calc_betas()
+        self._calc_gammas()
 
         if self.activate_entropy_fix:
             a = self.check_entropy()

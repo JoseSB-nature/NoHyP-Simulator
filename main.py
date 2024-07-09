@@ -13,7 +13,7 @@ if __name__ == '__main__':
     
     river = Canal()
 
-    river.temporal_loop(mode='wave') # Can be 'flux' or 'wave' for fluxes or contributions scheme     
+    river.temporal_loop(mode='flux') # Can be 'flux' or 'wave' for fluxes or contributions scheme     
     
     river.plot_results()
     # river.prog_bar.next()
