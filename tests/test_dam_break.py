@@ -17,7 +17,8 @@ canal = {
     "entropy fix": "True",
     "CFL": 0.9,
     "end time": 0.8,
-    "output freq": 1
+    "output freq": 1,
+    "Non Hydrostatic": "False"
 }
 
 dambreak = {

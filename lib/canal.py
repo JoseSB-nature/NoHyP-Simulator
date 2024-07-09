@@ -34,6 +34,8 @@ class Canal:
         self.real_time = 0.0  # Real time of the simulation
         self.t_int = 0  # Time step counter
 
+        self.test = test
+
         if test:
             config = canal
         else:
@@ -81,6 +83,10 @@ class Canal:
         out_freq = config["output freq"]
         self.out_freq = out_freq
         self.out_counter = self.out_freq
+        
+        non_hydrostatic = config["Non Hydrostatic"]
+        self.non_hydrostatic = True if non_hydrostatic == "True" else False
+
 
         self.dt_list = []  # List of time steps
 
@@ -674,7 +680,8 @@ class Canal:
             self.update_cell_values()
 
             # update non-hydrostatic variables
-            self.non_hydrostatic_correction()
+            if self.non_hydrostatic:
+                self.non_hydrostatic_correction()
 
             self.real_time += self.dt
             if self.out_freq == "no output":
@@ -883,25 +890,25 @@ class Canal:
         self.TDMA()
         # self.p[0] = self.p[1]  # self.rho*self.gravity*self.h[0]
         # self.p[-1] = self.p[-2]  # self.rho*self.gravity*self.h[-1]
-        self.p = 0.7 * self.p
+        # self.p = 0.7 * self.p
         # print(f'\n dt:{self.real_time:.3}, pmax:{max(self.p)}')
 
-        # # # update hu
-        # self.hu -= (
-        #     self.dt
-        #     / self.dx
-        #     * (
-        #         self.h * (np.roll(self.p, 1) - self.p)
-        #         + (np.roll(self.p, 1) + self.p)
-        #         * (np.roll(self.h, -1) - np.roll(self.h, 1)
-        #         + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
-        #         / 4
-        #     )
-        # )
+        # # update hu
+        self.hu -= (
+            self.dt
+            / self.dx
+            * (
+                self.h * (np.roll(self.p, 1) - self.p)
+                + (np.roll(self.p, 1) + self.p)
+                * (np.roll(self.h, -1) - np.roll(self.h, 1)
+                + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
+                / 4
+            )
+        )
 
-        # # # update w
-        # h_edge = 0.5 * (self.h + np.roll(self.h, 1))
-        # self.w += self.dt * 2 * self.p / h_edge
+        # # update w
+        h_edge = 0.5 * (self.h + np.roll(self.h, 1))
+        self.w += self.dt * 2 * self.p / h_edge
 
     # SOLITON
     def h_sw_function(self, x, t):

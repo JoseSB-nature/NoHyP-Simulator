@@ -9,5 +9,6 @@
     "entropy fix": "True",
     "CFL": 0.98, 
     "end time": 30,
-    "output freq": 1.0
+    "output freq": 1.0,
+    "Non Hydrostatic": "True"
 }
