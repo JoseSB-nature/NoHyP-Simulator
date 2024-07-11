@@ -412,15 +412,21 @@ class Canal:
             self.cfl * self.dx / np.max(np.abs(aux))
         )  # Courant-Friedrichs-Lewy condition, limit the time step to the CFL condition
         # output and end limits
-        if self.real_time + self.dt > self.out_counter:
+        if self.real_time + self.dt > self.end_time:
+            self.dt = self.end_time - self.real_time
+            try:
+                self.prog_bar.next()
+            except Exception:
+                pass
+            
+        elif self.real_time + self.dt > self.out_counter:
             self.dt = self.out_counter - self.real_time
             self.out_counter += self.out_freq
             try:
                 self.prog_bar.next()
-            except:
+            except Exception:
                 pass
-        if self.real_time + self.dt > self.end_time:
-            self.dt = self.end_time - self.real_time
+
         self.dt_list.append(self.dt)
 
     def update_hydro_waves(self):
@@ -728,10 +734,10 @@ class Canal:
 
         # Exact solution if available
         if self.exact:
-            self.ax[0].plot(
+            self.ax[0,0].plot(
                 self.exact_x, self.exact_h, ".", ms=1, color="black", label="h exact"
             )
-            self.ax[1].plot(
+            self.ax[1,0].plot(
                 self.exact_x, self.exact_u, ".", ms=1, color="black", label="u exact"
             )
 
@@ -761,14 +767,6 @@ class Canal:
         if self.z_mode == "file":
             self.ax[0, 0].fill_between(x, 0, self.z, color="black", alpha=0.2)
 
-        # Exact solution if available
-        if self.exact:
-            self.ax[0].plot(
-                self.exact_x, self.exact_h, ".", ms=1, color="black", label="h exact"
-            )
-            self.ax[1].plot(
-                self.exact_x, self.exact_u, ".", ms=1, color="black", label="u exact"
-            )
 
         self.fig.suptitle(f"Time: {self.real_time:.2f} s")
         self.fig.canvas.draw()
@@ -893,22 +891,22 @@ class Canal:
         # self.p = 0.7 * self.p
         # print(f'\n dt:{self.real_time:.3}, pmax:{max(self.p)}')
 
-        # # update hu
-        self.hu -= (
-            self.dt
-            / self.dx
-            * (
-                self.h * (np.roll(self.p, 1) - self.p)
-                + (np.roll(self.p, 1) + self.p)
-                * (np.roll(self.h, -1) - np.roll(self.h, 1)
-                + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
-                / 4
-            )
-        )
+        # # # update hu
+        # self.hu -= (
+        #     self.dt
+        #     / self.dx
+        #     * (
+        #         self.h * (np.roll(self.p, 1) - self.p)
+        #         + (np.roll(self.p, 1) + self.p)
+        #         * (np.roll(self.h, -1) - np.roll(self.h, 1)
+        #         + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
+        #         / 4
+        #     )
+        # )
 
-        # # update w
-        h_edge = 0.5 * (self.h + np.roll(self.h, 1))
-        self.w += self.dt * 2 * self.p / h_edge
+        # # # update w
+        # h_edge = 0.5 * (self.h + np.roll(self.h, 1))
+        # self.w += self.dt * 2 * self.p / h_edge
 
     # SOLITON
     def h_sw_function(self, x, t):

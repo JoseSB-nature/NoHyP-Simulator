@@ -1,6 +1,6 @@
 {
-    "length": 1000,
-    "delta x": 5, 
+    "length": 20,
+    "delta x": 0.01, 
     "base width": 1.0,
     "z bed": 0.0,
     "angle": 90,
@@ -8,7 +8,7 @@
     "initial mode": "DAMBREAK",
     "entropy fix": "True",
     "CFL": 0.98, 
-    "end time": 30,
-    "output freq": 1.0,
+    "end time": 0.8,
+    "output freq": 0.1,
     "Non Hydrostatic": "True"
 }
