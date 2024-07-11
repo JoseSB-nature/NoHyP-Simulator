@@ -28,7 +28,7 @@ class Canal:
 
     def __init__(self, test=False, canal=None, case=None):
 
-        self.gravity = 9.81  # Gravity acceleration in m/s^2
+        self.gravity = 9.81 # Gravity acceleration in m/s^2
         self.rho = 1  # Water density in kg/m^3
 
         self.real_time = 0.0  # Real time of the simulation
@@ -689,6 +689,7 @@ class Canal:
             if self.non_hydrostatic:
                 self.non_hydrostatic_correction()
 
+            self.update_cell_values()
             self.real_time += self.dt
             if self.out_freq == "no output":
                 continue
@@ -793,12 +794,17 @@ class Canal:
             - np.roll(self.h, 1)
             - 2 * np.roll(self.z, 1)
         )  # mean phi of two walls [i+1]-[i-1]
+        
         phi_edge = (
             self.h + 2 * self.z - np.roll(self.h, 1) - 2 * np.roll(self.z, 1)
         )  # mean phi of two cells [i]-[i-1]
         h_edge = 0.5 * (self.h + np.roll(self.h, 1))  # mean h of two cells [i]-[i-1]
         q_edge = 0.5 * (self.hu + np.roll(self.hu, 1))  # mean q of two cells [i]-[i-1]
-
+        phi[0] = phi[1]  # CONTOUR
+        phi[-1] = phi[-2]  # CONTOUR
+        phi_edge[0] = 0.0
+        h_edge[0] = self.h[0]
+        q_edge[0] = self.hu[0]
         # Calculate the coefficients of the tridiagonal matrix
         self.A_sub_diag = (np.roll(phi, 1) - 2 * np.roll(self.h, 1)) * (
             phi_edge + 2 * h_edge
@@ -814,16 +820,16 @@ class Canal:
             * self.dx
             / self.dt
             * (
-                self.h * (self.hu - np.roll(self.hu, 1))
+                h_edge * (self.hu - np.roll(self.hu, 1))
                 - q_edge * phi_edge
                 + 2 * self.dx * h_edge * self.w
             )
         )
-
-        self.A_sub_diag[0] = self.A_sub_diag[1]  # CONTOUR
-        self.B_diag[0] = self.B_diag[1]
-        self.C_sup_diag[0] = self.C_sup_diag[1]
-        self.D[0] = self.D[1]
+        
+        self.A_sub_diag[0] = 0.0
+        self.B_diag[0] = 0.0
+        self.C_sup_diag[0] = 0.0
+        self.D[0] = 0.0
 
         self.A_sub_diag[-1] = self.A_sub_diag[-2]  # CONTOUR
         self.B_diag[-1] = self.B_diag[-2]
@@ -852,6 +858,7 @@ class Canal:
         r = np.zeros(self.n)
         rp = np.zeros(self.n)
         bp = np.zeros(self.n)
+        self.p = np.zeros(self.n)
 
         for i in range(2, self.n - 1):
             r[i] = d[i]
@@ -891,22 +898,32 @@ class Canal:
         # self.p = 0.7 * self.p
         # print(f'\n dt:{self.real_time:.3}, pmax:{max(self.p)}')
 
-        # # # update hu
-        # self.hu -= (
-        #     self.dt
-        #     / self.dx
-        #     * (
-        #         self.h * (np.roll(self.p, 1) - self.p)
-        #         + (np.roll(self.p, 1) + self.p)
-        #         * (np.roll(self.h, -1) - np.roll(self.h, 1)
-        #         + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
-        #         / 4
-        #     )
-        # )
+        # # update hu
+        aux= (
+            self.dt
+            / self.dx
+            * (
+                self.h *(np.roll(self.p, -1) - self.p)
+                + (np.roll(self.p, -1) + self.p)
+                * (np.roll(self.h, -1) - np.roll(self.h, 1)
+                + 2 * (np.roll(self.z, -1) - np.roll(self.z, 1)))
+                / 4
+            )
+        )
+        
+        # self.ax[0,1].plot(self.x,np.roll(self.p, -1) - self.p)
+        # self.ax[0,0].plot(self.x,self.p)
+        # self.ax[0,1].set_xlim(8, 12)
+        # self.ax[0,0].set_xlim(8, 12)
+        # self.fig.canvas.draw()
+        # self.fig.canvas.flush_events()
+        # plt.savefig(f"img/p_{self.t_int}_{self.scheme}.png")
+        # print(f"aux: {np.argmax(aux)}; {np.max(aux)}")
+        self.hu -= aux
 
-        # # # update w
-        # h_edge = 0.5 * (self.h + np.roll(self.h, 1))
-        # self.w += self.dt * 2 * self.p / h_edge
+        # # # # update w
+        h_edge = 0.5 * (self.h + np.roll(self.h, 1))
+        self.w += self.dt * 2 * self.p / h_edge
 
     # SOLITON
     def h_sw_function(self, x, t):
