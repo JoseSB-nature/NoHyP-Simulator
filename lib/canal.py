@@ -188,6 +188,7 @@ class Canal:
                 Amplitude = soliton["A"]
                 Xi = soliton["Xi"]
                 Position = soliton["position"]
+                self.exact = True if soliton["exact"] == "True" else False
                 self.wave_position = Position
                 self.Height0 = Height0
                 self.Amplitude = Amplitude
@@ -195,10 +196,12 @@ class Canal:
                 self.wave_celerity = np.sqrt(self.gravity * (Height0 + Amplitude))
 
                 # Vector of the initial conditions
-                self.h = self.h_sw_function(self.x, 0)
+                self.h = self.h_sw_function(self.x-self.wave_position, 0)
                 self.u = self.u_sw_function()
-                self.w = self.w_sw_function(self.x, 0)
-                self.pnh_sw_function(self.x, 0)
+                self.w = self.w_sw_function(self.x-self.wave_position, 0)
+                self.p = self.pnh_sw_function(self.x-self.wave_position, 0)
+                self.hu = self.h * self.u
+                self.hw = self.h * self.w
 
             case "MCDONALD":
                 # TO BE IMPLEMENTED
@@ -513,10 +516,16 @@ class Canal:
         self.hu -= self.dt / self.dx * (hu_wave_minus + np.roll(hu_wave_plus, 1))
 
         # contorn conditions
-        self.h[0] = self.left_height
-        self.h[-1] = self.right_height
-        self.hu[0] = self.left_u * self.left_height
-        self.hu[-1] = self.right_u * self.right_height
+        if self.mode == "DAMBREAK":
+            self.h[0] = self.left_height
+            self.h[-1] = self.right_height
+            self.hu[0] = self.left_u * self.left_height
+            self.hu[-1] = self.right_u * self.right_height
+        elif self.mode == "SOLITON":
+            self.h[0] = self.h[1]
+            self.h[-1] = self.h[-2]
+            self.hu[0] = self.hu[1]
+            self.hu[-1] = self.hu[-2]
 
         # update w
         u = np.divide(
@@ -889,7 +898,8 @@ class Canal:
         else:
             self.p[-1] = 0
 
-        self.p[0] = P0
+        # self.p[0] = P0
+        self.p[0] = self.p[1]  # self.rho*self.gravity*self.h[0]
 
         for i in range(self.n - 2, 0, -1):
             if abs(bp[i]) > TOL9:

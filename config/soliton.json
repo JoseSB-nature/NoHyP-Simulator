@@ -1,6 +1,7 @@
 {
-    "H_0": 0.7,
+    "H0": 0.7,
     "A": 0.3,
     "Xi": 2.0,
-    "position": 10
+    "position": 10,
+    "exact": "False"
 }
