@@ -601,22 +601,35 @@ class Canal:
         self.hu[0] = self.left_u * self.left_height
         self.hu[-1] = self.right_u * self.right_height
 
-        # update w
-        hu_dw = (
-            self.hu
-            + self.lambda1_minus * self.gamma1
-            + self.lambda2_minus * self.gamma2
-        )  # h flux minus
-        hw_flux_minus = np.where(hu_dw > 0, hu_dw * self.w, hu_dw * np.roll(self.w, -1))  # w transport
-        self.hw = self.hw - self.dt / self.dx * (
-            hw_flux_minus - np.roll(hw_flux_minus, 1) 
-        )  # update hw with (huw)⁻_{i+1/2} - (huw)⁻_{i-1/2}
-        self.hw[0] = self.hw[1]
-        self.hw[-1] = self.hw[-2]
-
-        self.w = np.divide(
-            self.hw, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
+        # update w - Flux scheme (deprecated)
+        # hu_dw = (
+        #     self.hu
+        #     + self.lambda1_minus * self.gamma1
+        #     + self.lambda2_minus * self.gamma2
+        # )  # h flux minus
+        # hw_flux_minus = np.where(hu_dw > 0, hu_dw * self.w, hu_dw * np.roll(self.w, -1))  # w transport
+        # self.hw = self.hw - self.dt / self.dx * (
+        #     hw_flux_minus - np.roll(hw_flux_minus, 1) 
+        # )  # update hw with (huw)⁻_{i+1/2} - (huw)⁻_{i-1/2}        
+        # self.w = np.divide(
+        #     self.hw, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
+        # )
+        
+        ## update w
+        u = np.divide(
+            self.hu, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
         )
+        u_plus = 0.5 * (u + np.abs(u))
+        u_minus = 0.5 * (np.roll(u, -1) - np.abs(np.roll(u, -1)))
+        self.w = self.w - self.dt / self.dx * (
+            u_plus * (self.w - np.roll(self.w, 1))
+            + u_minus * (np.roll(self.w, -1) - self.w)
+        )
+        
+        self.w[0] = self.w[1]
+        self.w[-1] = self.w[-2]
+
+
 
     # Calculate variable vectors
     def calc_vectors(self):
@@ -661,12 +674,8 @@ class Canal:
         self.u = np.divide(
             self.hu, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
         )
-        if self.scheme == "flux":
-            self.w = np.divide(
-                self.hw, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
-            )
-        elif self.scheme == "wave":
-            self.hw = self.h * self.w
+       
+        self.hw = self.h * self.w
 
     ##### Temporal loop #####
     def temporal_loop(self, mode="flux"):
