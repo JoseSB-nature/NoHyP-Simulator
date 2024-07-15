@@ -19,4 +19,4 @@ if __name__ == '__main__':
     # river.prog_bar.next()
     river.prog_bar.finish()
     
-    river.save_config()
+    river.save_config(id=f"dx_{river.dx}")

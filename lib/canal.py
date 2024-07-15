@@ -1031,8 +1031,13 @@ class Canal:
             )
         )
 
-    def save_config(self, name=None):
+    def save_config(self, id=None):
         # zip the config folder into test_cases
-        if name is None:
+        if id is None:
             name = f"test_case_{self.mode}_{self.scheme}"
+        else:
+            name = id + f"_{self.mode}_{self.scheme}"    
+            
         shutil.make_archive(f"cases/{name}", "zip", "config")
+        # save also state
+        np.savetxt(f"cases/{name}_state.csv", np.vstack((self.x, self.h, self.hu, self.w, self.p)).T, delimiter=";", header="x;h;hu;w;p")
