@@ -88,6 +88,8 @@ class Canal:
         self.non_hydrostatic = True if non_hydrostatic == "True" else False
 
 
+ 
+
         self.dt_list = []  # List of time steps
 
         self.x = np.linspace(0, length, self.n)
@@ -206,6 +208,9 @@ class Canal:
             case "MCDONALD":
                 # TO BE IMPLEMENTED
                 pass
+
+        # Energy calculation
+        self.energy = self.h + self.z + (self.u ** 2 + self.w**2 ) / (2*self.gravity)
 
         ## initialize plots
         if not test:
@@ -685,6 +690,9 @@ class Canal:
         )
        
         self.hw = self.h * self.w
+        
+        # Energy calculation
+        self.energy = self.h + self.z + self.u ** 2 / (2*self.gravity)
 
     ##### Temporal loop #####
     def temporal_loop(self, mode="flux"):
@@ -745,8 +753,8 @@ class Canal:
         self.ax[0, 1].plot(x, self.w, label="Fr")
 
         self.ax[0, 1].set_title("W")
-        self.ax[1, 1].plot(x, self.p, label="P")
-        self.ax[1, 1].set_title("Pressure")
+        self.ax[1, 1].plot(x, self.energy, label="E")
+        self.ax[1, 1].set_title("Energy")
         # plot z bed solid
         if self.z_mode == "file":
             self.ax[0, 0].fill_between(x, 0, self.z, color="black", alpha=0.2)
@@ -1032,12 +1040,12 @@ class Canal:
         )
 
     def save_config(self, id=None):
-        # zip the config folder into test_cases
+        # zip the config folder into test_cases, disable for now
         if id is None:
             name = f"test_case_{self.mode}_{self.scheme}"
         else:
             name = id + f"_{self.mode}_{self.scheme}"    
             
-        shutil.make_archive(f"cases/{name}", "zip", "config")
+        # shutil.make_archive(f"cases/{name}", "zip", "config")
         # save also state
-        np.savetxt(f"cases/{name}_state.csv", np.vstack((self.x, self.h, self.hu, self.w, self.p)).T, delimiter=";", header="x;h;hu;w;p")
+        np.savetxt(f"cases/{name}_state.csv", np.vstack((self.x, self.h, self.hu, self.w, self.p, self.energy)).T, delimiter=";", header="x;h;hu;w;p")

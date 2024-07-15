@@ -1,14 +1,14 @@
 {
-    "length": 20,
-    "delta x": 0.0025, 
+    "length": 100,
+    "delta x": 0.1, 
     "base width": 1.0,
     "z bed": 0,
     "angle": 90,
     "manning": 0.00,
-    "initial mode": "DAMBREAK",
+    "initial mode": "SOLITON",
     "entropy fix": "True",
     "CFL": 0.98, 
-    "end time": 0.8,
-    "output freq": 0.1,
+    "end time": 10,
+    "output freq": 1,
     "Non Hydrostatic": "True"
 }
