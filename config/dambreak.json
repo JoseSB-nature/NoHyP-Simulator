@@ -1,10 +1,10 @@
 {
-    "position": 50,
+    "position": 100,
     "left height": 1.2,
     "right height": 1,
     "left u": 0,
     "right u": 0,
     "left w": 0.0,
     "right w": 0.0,
-    "exact": "False"
+    "exact": "True"
 }

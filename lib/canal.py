@@ -92,7 +92,7 @@ class Canal:
 
         self.dt_list = []  # List of time steps
 
-        self.x = np.linspace(0, length, self.n)
+        self.x = np.linspace(0, length-self.dx, self.n) + self.dx / 2
 
         if not test:
             self.prog_bar = Bar("Processing", max=self.end_time / self.out_freq)
@@ -163,6 +163,8 @@ class Canal:
 
                 self.h[: int(position / self.dx)] = left_height
                 self.h[int(position / self.dx) :] = right_height
+                self.h = np.where(self.h>self.z, self.h - self.z, 0)
+                
                 self.u[: int(position / self.dx)] = left_u
                 self.u[int(position / self.dx) :] = right_u
                 self.w[: int(position / self.dx)] = left_w
@@ -175,9 +177,9 @@ class Canal:
 
                 if exact:
                     with open("config/exact_dmb.txt", "r") as f:
-                        self.exact_x, self.exact_h, _, self.exact_u = np.loadtxt(
+                        self.exact_x, self.exact_h, self.exact_u = np.loadtxt(
                             f, unpack=True
-                        )
+                        )[:3]
 
             case "SOLITON":
                 if test:
@@ -198,10 +200,11 @@ class Canal:
                 self.wave_celerity = np.sqrt(self.gravity * (Height0 + Amplitude))
 
                 # Vector of the initial conditions
-                self.h = self.h_sw_function(self.x-self.wave_position, 0)
-                self.u = self.u_sw_function()
-                self.w = self.w_sw_function(self.x-self.wave_position, 0)
-                self.p = self.pnh_sw_function(self.x-self.wave_position, 0)
+                h = self.h_sw_function(self.x-self.wave_position, 0)
+                self.h = h - self.z # initial depth
+                self.u = self.u_sw_function(self.x-self.wave_position, 0)
+                self.w = self.w_sw_function(self.x-self.wave_position, 0)*0
+                self.p = self.pnh_sw_function(self.x-self.wave_position, 0)*0
                 self.hu = self.h * self.u
                 self.hw = self.h * self.w
 
@@ -692,7 +695,7 @@ class Canal:
         self.hw = self.h * self.w
         
         # Energy calculation
-        self.energy = self.h + self.z + self.u ** 2 / (2*self.gravity)
+        self.energy = self.h + self.z + (self.u ** 2 + self.w ** 2)/ (2*self.gravity)
 
     ##### Temporal loop #####
     def temporal_loop(self, mode="flux"):
@@ -737,6 +740,29 @@ class Canal:
                 ax.clear()
                 ax.grid()
         x = self.x
+        
+        # Exact solution if available
+        if self.exact and self.mode == "DAMBREAK":
+            self.ax[0,0].plot(
+                self.exact_x, self.exact_h, ".", ms=1, color="black", label="h exact"
+            )
+            self.ax[1,0].plot(
+                self.exact_x, self.exact_u, ".", ms=1, color="black", label="u exact"
+            )
+        if self.mode == "SOLITON" and self.exact:
+            self.ax[0,0].plot(
+                self.x, self.h_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="h exact"
+            )
+            self.ax[1,0].plot(
+                self.x, self.u_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="u exact"
+            )
+            self.ax[0,1].plot(
+                self.x, self.w_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="w exact"
+            )
+            self.ax[1,1].plot(
+                self.x, self.pnh_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="P exact"
+            )
+        
         self.ax[0, 0].plot(x, self.h + self.z, label="h")
         self.ax[0, 0].set_title("h")
         # self.ax[0].set_ylim(min(self.left_height,self.right_height)-0.1,max(self.left_height,self.right_height)+0.1)
@@ -753,25 +779,21 @@ class Canal:
         self.ax[0, 1].plot(x, self.w, label="Fr")
 
         self.ax[0, 1].set_title("W")
-        self.ax[1, 1].plot(x, self.energy, label="E")
-        self.ax[1, 1].set_title("Energy")
+        # self.ax[1, 1].plot(x, self.energy, label="E")
+        # self.ax[1, 1].set_title("Energy")
+        
+        self.ax[1, 1].plot(x, self.p, label="P")
+        self.ax[1, 1].set_title("P")
         # plot z bed solid
         if self.z_mode == "file":
             self.ax[0, 0].fill_between(x, 0, self.z, color="black", alpha=0.2)
 
-        # Exact solution if available
-        if self.exact:
-            self.ax[0,0].plot(
-                self.exact_x, self.exact_h, ".", ms=1, color="black", label="h exact"
-            )
-            self.ax[1,0].plot(
-                self.exact_x, self.exact_u, ".", ms=1, color="black", label="u exact"
-            )
+
 
         self.fig.suptitle(f"Time: {self.real_time:.2f} s")
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        self.fig.savefig(f"img/state_{self.t_int}_{self.scheme}.png")
+        self.fig.savefig(f"img/state_{self.t_int}_{self.scheme}.png", dpi=400)
 
     def plot_TDMA(self):
         for ax_row in self.ax:
@@ -954,7 +976,7 @@ class Canal:
 
     # SOLITON
     def h_sw_function(self, x, t):
-        return (
+        h = (
             self.Height0
             + self.Amplitude
             / np.cosh(
@@ -964,17 +986,20 @@ class Canal:
             )
             ** 2
         )
+        
+        h = self.Height0 + self.Amplitude / np.cosh((x - self.wave_celerity * t) * np.sqrt(3*self.Amplitude/(4*self.Height0**3)))**2
+        return h
 
-    def u_sw_function(self):
-        return self.wave_celerity * (1 - self.Height0 / self.h)
+    def u_sw_function(self, x, t):
+        return self.wave_celerity * (1 - self.Height0 / self.h_sw_function(x, t))
 
     def w_sw_function(self, x, t):
         return (
-            -self.wave_celerity
+            self.wave_celerity
             * self.Amplitude
-            / self.h
+            / self.h_sw_function(x, t)
             * np.sqrt(self.Xi * self.Amplitude / (self.Height0 + self.Amplitude))
-            * np.tanh(
+            * np.sinh(
                 (x - self.wave_celerity * t)
                 / self.Height0
                 * np.sqrt(self.Xi * self.Amplitude / (self.Height0 + self.Amplitude))
@@ -984,17 +1009,19 @@ class Canal:
                 / self.Height0
                 * np.sqrt(self.Xi * self.Amplitude / (self.Height0 + self.Amplitude))
             )
-            ** 2
+            ** 3
         )
 
     def pnh_sw_function(self, x, t):
-        return (
+        H = self.h_sw_function(x, t)
+
+        P = -(
             (self.wave_celerity * self.Amplitude) ** 2
-            / (2 * (self.Amplitude + self.Height0) * self.h)
+            / (2 * (self.Amplitude + self.Height0) * H)
             * (
-                2
+                2 
                 * self.Amplitude
-                / self.h
+                / H
                 / np.cosh(
                     (x - self.wave_celerity * t)
                     / self.Height0
@@ -1003,15 +1030,7 @@ class Canal:
                     )
                 )
                 ** 6
-                - 3
-                / np.cosh(
-                    (x - self.wave_celerity * t)
-                    / self.Height0
-                    * np.sqrt(
-                        self.Xi * self.Amplitude / (self.Height0 + self.Amplitude)
-                    )
-                )
-                * np.tanh(
+                - 3 * np.sinh(
                     (x - self.wave_celerity * t)
                     / self.Height0
                     * np.sqrt(
@@ -1019,7 +1038,14 @@ class Canal:
                     )
                 )
                 ** 2
-                + np.sinh(
+                / np.cosh(
+                    (x - self.wave_celerity * t)
+                    / self.Height0
+                    * np.sqrt(
+                        self.Xi * self.Amplitude / (self.Height0 + self.Amplitude)
+                    )
+                )**3
+                + 0*np.tanh(
                     (x - self.wave_celerity * t)
                     / self.Height0
                     * np.sqrt(
@@ -1038,6 +1064,8 @@ class Canal:
                 ** 2
             )
         )
+        
+        return P
 
     def save_config(self, id=None):
         # zip the config folder into test_cases, disable for now
