@@ -5,9 +5,9 @@ import shutil
 from loguru import logger
 import numpy as np
 from progress.bar import Bar
-import scienceplots
+# import scienceplots
 
-plt.style.use("science")
+# plt.style.use("science")
 # ignore where warnings
 # np.seterr(divide='ignore', invalid='ignore')
 
@@ -982,12 +982,12 @@ class Canal:
             / np.cosh(
                 (x - self.wave_celerity * t)
                 / self.Height0
-                * np.sqrt(self.Xi * self.Amplitude / (self.Height0 + self.Amplitude))
+                * np.sqrt(self.Xi * self.Amplitude / (2*(self.Height0 + self.Amplitude)))
             )
             ** 2
         )
         
-        h = self.Height0 + self.Amplitude / np.cosh((x - self.wave_celerity * t) * np.sqrt(3*self.Amplitude/(4*self.Height0**3)))**2
+        # h = self.Height0 + self.Amplitude / np.cosh((x - self.wave_celerity * t) * np.sqrt(3*self.Amplitude/(4*self.Height0**3)))**2
         return h
 
     def u_sw_function(self, x, t):
