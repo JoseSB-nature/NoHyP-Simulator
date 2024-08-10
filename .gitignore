@@ -4,3 +4,4 @@ cases/
 lib/__pycache__/
 tests/__pycache__/
 .vscode/
+output/

@@ -5,6 +5,7 @@ import shutil
 from loguru import logger
 import numpy as np
 from progress.bar import Bar
+import os
 # import scienceplots
 
 # plt.style.use("science")
@@ -87,8 +88,11 @@ class Canal:
         non_hydrostatic = config["Non Hydrostatic"]
         self.non_hydrostatic = True if non_hydrostatic == "True" else False
 
+        gauges_tag = config["gauges"]
+        self.gauges_tag = True if gauges_tag == "file" else False
+        os.system('rm -rf output/*')
 
- 
+        self.obs_freq = config["observation freq"]
 
         self.dt_list = []  # List of time steps
 
@@ -126,6 +130,15 @@ class Canal:
                 self.z = aux
         else:
             self.z = np.ones(self.n) * z_bed
+
+        if self.gauges_tag:
+            self.gauges_pos = np.loadtxt("config/gauges.txt",skiprows=1)
+            for i,pos in enumerate(self.gauges_pos):
+                open(f'output/probe{i}.csv','w').write('x;t;h;hu;w;p;e\n')
+
+        else:
+            self.gauges_pos = None
+        print("gauges",self.gauges_pos)        
 
         logger.info(f"Canal created with {self.n} cells")
         logger.info(f"Initial mode set to {mode}")
@@ -201,7 +214,7 @@ class Canal:
 
                 # Vector of the initial conditions
                 h = self.h_sw_function(self.x-self.wave_position, 0)
-                self.h = h - self.z # initial depth
+                self.h = np.where(h>self.z, h - self.z, 0)
                 self.u = self.u_sw_function(self.x-self.wave_position, 0)
                 self.w = self.w_sw_function(self.x-self.wave_position, 0)*0
                 self.p = self.pnh_sw_function(self.x-self.wave_position, 0)*0
@@ -733,6 +746,9 @@ class Canal:
                         print("\n")
                         logger.warning(f"Entropy fix at Time: {self.real_time:.2f} s")
 
+            if self.real_time%self.obs_freq < self.dt:
+                self.write_gauges() 
+
     # Plot the results
     def plot_results(self):
         for ax_row in self.ax:
@@ -762,6 +778,8 @@ class Canal:
             self.ax[1,1].plot(
                 self.x, self.pnh_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="P exact"
             )
+        
+        if self.mode == "SOLITON": self.ax[0,0].set_ylim(0, 1.1*(self.Height0 + self.Amplitude))
         
         self.ax[0, 0].plot(x, self.h + self.z, label="h")
         self.ax[0, 0].set_title("h")
@@ -821,6 +839,18 @@ class Canal:
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
         self.fig.savefig(f"img/state_{self.t_int}_{self.scheme}.png")
+
+    def write_gauges(self):
+        for i, gauge in enumerate(self.gauges_pos):
+            # search for index
+            index = np.abs((self.x-gauge)).argmin()
+            with open(f'output/probe{i}.csv','a') as fout:
+                vars = [self.x[index], self.real_time, self.h[index], self.hu[index], self.w[index], self.p[index], self.energy[index]]
+                line = ''
+                for v in vars: line += f'{v};'
+                line+='\n'
+                fout.write(line)
+
 
     ### elliptic non-hydrostatic model ###
     def Tridiagonal(self):
@@ -972,7 +1002,8 @@ class Canal:
 
         # # # # update w
         h_edge = 0.5 * (self.h + np.roll(self.h, 1))
-        self.w += self.dt * 2 * self.p / h_edge
+        aux = np.divide(self.dt * 2 * self.p, h_edge, where=h_edge > TOL_WET_CELLS, out=np.zeros_like(h_edge))
+        self.w += aux
 
     # SOLITON
     def h_sw_function(self, x, t):
@@ -1074,6 +1105,6 @@ class Canal:
         else:
             name = id + f"_{self.mode}_{self.scheme}"    
             
-        # shutil.make_archive(f"cases/{name}", "zip", "config")
+        shutil.make_archive(f"cases/{name}", "zip", "config")
         # save also state
         np.savetxt(f"cases/{name}_state.csv", np.vstack((self.x, self.h, self.hu, self.w, self.p, self.energy)).T, delimiter=";", header="x;h;hu;w;p")

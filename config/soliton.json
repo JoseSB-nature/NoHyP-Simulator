@@ -1,7 +1,7 @@
 {
-    "H0": 0.95,
-    "A": 0.05,
-    "Xi": 2,
-    "position": 40,
-    "exact": "True"
+    "H0": 1.0,
+    "A": 0.5,
+    "Xi": 1.5,
+    "position": 15,
+    "exact": "False"
 }
