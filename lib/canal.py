@@ -205,7 +205,13 @@ class Canal:
                 Amplitude = soliton["A"]
                 Xi = soliton["Xi"]
                 Position = soliton["position"]
-                self.exact = True if soliton["exact"] == "True" else False
+                self.exact = True if soliton["exact"] == "True" else ("file" if soliton["exact"] == 'file' else False)
+                if self.exact == 'file':
+                    with open("config/exact_dmb.txt", "r") as f:
+                        self.exact_x, self.exact_h, self.exact_u,_, self.exact_z = np.loadtxt(
+                            f, unpack=True
+                        )[:5]
+
                 self.wave_position = Position
                 self.Height0 = Height0
                 self.Amplitude = Amplitude
@@ -228,11 +234,33 @@ class Canal:
         # Energy calculation
         self.energy = self.h + self.z + (self.u ** 2 + self.w**2 ) / (2*self.gravity)
 
+        # Init the boundary configuration
+        self._init_boundary()
+
         ## initialize plots
         if not test:
             plt.ion()
             self.fig, self.ax = plt.subplots(2, 2, figsize=(10, 8))
             self.plot_results()  # plot initial conditions
+
+    def _init_boundary(self):
+        with open('config/boundary.json','r') as f:
+            boundary = json.load(f)
+        self.bc_type = boundary["Boundary type"]
+        self.bc_cte = boundary["Constant value"]
+
+        if self.bc_type == "sin":
+            self.bc_A = boundary["Type parameters"]["Amplitude"]
+            self.bc_f = boundary["Type parameters"]["Frequency"]
+        
+
+
+    def bc_function(self):
+        if self.bc_type == "sin":
+            bc_val = self.bc_cte + self.bc_A * np.sin(2 * np.pi * self.bc_f * self.real_time)
+
+        return bc_val
+        
 
     # Calule te hydraulic radius of the trapezoidal canal in terms of B and angle
     def _calc_hidraulic_radius(self):
@@ -478,11 +506,21 @@ class Canal:
 
         hls = np.where(np.abs(hls) > TOL_WET_CELLS, hls, 0)
         hrs = np.where(np.abs(hrs) > TOL_WET_CELLS, hrs, 0)
+        
 
         hu_wave_minus = np.zeros(self.n)
         h_wave_minus = np.zeros(self.n)
         hu_wave_plus = np.zeros(self.n)
         h_wave_plus = np.zeros(self.n)
+        
+        #Positivity fix
+        hstar = self.h + self.alpha1
+        subcrit = self.lambda1*self.lambda2 < 0
+        
+        self.beta1 = np.where(subcrit*hls,hstar*self.lambda1,self.beta1)
+        self.beta2 = - self.beta1
+        self.beta1 = np.where(subcrit*hrs,hstar*self.lambda2,self.beta1)
+        self.beta2 = - self.beta1
 
         # # # vector to store the fluxes
 
@@ -701,6 +739,11 @@ class Canal:
                 self.hu[i + 1] = 0
 
     def update_cell_values(self):
+        
+        # Positivity fix
+        # self.h = np.where(self.h < TOL_WET_CELLS, np.zeros_like(self.h),self.h) 
+        
+        # update velocity
         self.u = np.divide(
             self.hu, self.h, where=self.h > TOL_WET_CELLS, out=np.zeros_like(self.h)
         )
@@ -709,6 +752,8 @@ class Canal:
         
         # Energy calculation
         self.energy = self.h + self.z + (self.u ** 2 + self.w ** 2)/ (2*self.gravity)
+
+  
 
     ##### Temporal loop #####
     def temporal_loop(self, mode="flux"):
@@ -748,6 +793,11 @@ class Canal:
 
             if self.real_time%self.obs_freq < self.dt:
                 self.write_gauges() 
+            
+            self.set_bc_on_time()
+
+    def set_bc_on_time(self):
+        self.h[0] = self.bc_function()
 
     # Plot the results
     def plot_results(self):
@@ -760,12 +810,13 @@ class Canal:
         # Exact solution if available
         if self.exact and self.mode == "DAMBREAK":
             self.ax[0,0].plot(
-                self.exact_x, self.exact_h, ".", ms=1, color="black", label="h exact"
+                self.exact_x[::40], self.exact_h[::40], ".", ms=5, color="black", label="h exact"
             )
             self.ax[1,0].plot(
-                self.exact_x, self.exact_u, ".", ms=1, color="black", label="u exact"
+                self.exact_x[::40], self.exact_u[::40], ".", ms=5, color="black", label="u exact"
             )
-        if self.mode == "SOLITON" and self.exact:
+            self.ax[0,0].legend()
+        if self.mode == "SOLITON" and self.exact == True:
             self.ax[0,0].plot(
                 self.x, self.h_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="h exact"
             )
@@ -778,8 +829,17 @@ class Canal:
             self.ax[1,1].plot(
                 self.x, self.pnh_sw_function(self.x-self.wave_position, self.real_time), "--", ms=0.6, color="black", label="P exact"
             )
+        if self.exact == 'file' and self.mode == "SOLITON":
+            self.ax[0,0].plot(
+                self.exact_x[::5], self.exact_h[::5]+self.exact_z[::5], ".", ms=5, color="black", label="h exact"
+            )
+            self.ax[1,0].plot(
+                self.exact_x[::5], self.exact_u[::5], ".", ms=5, color="black", label="u exact"
+            )
+            self.ax[0,0].legend()
         
-        if self.mode == "SOLITON": self.ax[0,0].set_ylim(0, 1.1*(self.Height0 + self.Amplitude))
+        
+        if self.mode == "SOLITON": self.ax[0,0].set_ylim(0, 1.2*(self.Height0 + self.Amplitude))
         
         self.ax[0, 0].plot(x, self.h + self.z, label="h")
         self.ax[0, 0].set_title("h")
@@ -1107,4 +1167,4 @@ class Canal:
             
         shutil.make_archive(f"cases/{name}", "zip", "config")
         # save also state
-        np.savetxt(f"cases/{name}_state.csv", np.vstack((self.x, self.h, self.hu, self.w, self.p, self.energy)).T, delimiter=";", header="x;h;hu;w;p")
+        np.savetxt(f"output/{name}_state.csv", np.vstack((self.x, self.h, self.hu, self.w, self.p, self.energy, self.z)).T, delimiter=";", header="x;h;hu;w;p;e;z")

@@ -1,0 +1,10 @@
+{
+    "Boundary type":"sin",
+    "Position":"Upstream",
+    "Constant value":0.4,
+    "Type parameters":{
+        "Amplitude":0.05,
+        "Frequency":0.5
+    },
+    "DESCRIPTION":"Type can be set to H,Q or sin, position to Upstream or Downstream or both"
+}

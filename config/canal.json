@@ -1,6 +1,6 @@
 {
-    "length": 50,
-    "delta x": 0.05, 
+    "length": 45,
+    "delta x": 0.045, 
     "base width": 1.0,
     "z bed": "file",
     "angle": 90,
@@ -8,8 +8,8 @@
     "initial mode": "SOLITON",
     "entropy fix": "True",
     "CFL": 1.0, 
-    "end time": 4.151,
-    "output freq": 1,
+    "end time": 20,
+    "output freq": 2,
     "Non Hydrostatic": "True",
     "gauges": "file",
     "observation freq": 0.1
